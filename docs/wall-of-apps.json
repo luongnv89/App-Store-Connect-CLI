@@ -152,6 +152,13 @@
     "platform": ["iOS"]
   },
   {
+    "app": "Magic Sticker Printer",
+    "link": "https://apps.apple.com/app/id6759186064",
+    "creator": "jameselkins",
+    "icon": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/70/6a/e1/706ae16e-f081-eef4-6970-9d6896c4dbf4/AppIcon-0-0-1x_U007emarketing-0-8-0-85-220.png/512x512bb.jpg",
+    "platform": ["iOS"]
+  },
+  {
     "app": "Meshing",
     "link": "https://apps.apple.com/app/id6567933550",
     "creator": "rudrankriyam",
