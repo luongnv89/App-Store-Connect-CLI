@@ -453,6 +453,8 @@ func TestBuildsGroupValidationErrors(t *testing.T) {
 }
 
 func TestBuildsWaitValidationErrors(t *testing.T) {
+	t.Setenv("ASC_APP_ID", "")
+
 	tests := []struct {
 		name    string
 		args    []string
@@ -461,12 +463,17 @@ func TestBuildsWaitValidationErrors(t *testing.T) {
 		{
 			name:    "builds wait missing selectors",
 			args:    []string{"builds", "wait"},
-			wantErr: "Error: --build is required, or provide --app and --build-number",
+			wantErr: "Error: --app is required when --build is not provided",
+		},
+		{
+			name:    "builds wait app missing selector hints",
+			args:    []string{"builds", "wait", "--app", "APP_123"},
+			wantErr: "provide at least one app-scoped selector",
 		},
 		{
 			name:    "builds wait selectors mutually exclusive",
 			args:    []string{"builds", "wait", "--build", "BUILD_123", "--app", "APP_123", "--build-number", "42"},
-			wantErr: "--build is mutually exclusive with --app/--build-number",
+			wantErr: "--build is mutually exclusive with app-scoped selectors",
 		},
 		{
 			name:    "builds wait invalid poll interval",
@@ -477,6 +484,11 @@ func TestBuildsWaitValidationErrors(t *testing.T) {
 			name:    "builds wait invalid timeout",
 			args:    []string{"builds", "wait", "--build", "BUILD_123", "--timeout", "0s"},
 			wantErr: "--timeout must be greater than 0",
+		},
+		{
+			name:    "builds wait invalid since timestamp",
+			args:    []string{"builds", "wait", "--app", "APP_123", "--newest", "--since", "nope"},
+			wantErr: "--since must be an RFC3339 timestamp",
 		},
 	}
 
