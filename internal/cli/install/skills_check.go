@@ -220,6 +220,9 @@ func defaultPersistSkillsCheckedAt(timestamp string) error {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return err
 	}
+	if doc == nil {
+		doc = map[string]json.RawMessage{}
+	}
 
 	encoded, err := json.Marshal(strings.TrimSpace(timestamp))
 	if err != nil {

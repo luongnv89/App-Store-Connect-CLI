@@ -414,6 +414,38 @@ func TestDefaultPersistSkillsCheckedAt_PreservesUnknownFields(t *testing.T) {
 	}
 }
 
+func TestDefaultPersistSkillsCheckedAt_NullJSONCreatesObject(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv("ASC_CONFIG_PATH", cfgPath)
+
+	if err := os.WriteFile(cfgPath, []byte("null"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	want := "2026-03-05T15:00:00Z"
+	if err := defaultPersistSkillsCheckedAt(want); err != nil {
+		t.Fatalf("defaultPersistSkillsCheckedAt() error: %v", err)
+	}
+
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error: %v", err)
+	}
+
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("json.Unmarshal() error: %v", err)
+	}
+
+	var got string
+	if err := json.Unmarshal(doc["skills_checked_at"], &got); err != nil {
+		t.Fatalf("unmarshal skills_checked_at error: %v", err)
+	}
+	if got != want {
+		t.Fatalf("skills_checked_at = %q, want %q", got, want)
+	}
+}
+
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
 
