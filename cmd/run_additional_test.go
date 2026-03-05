@@ -123,6 +123,52 @@ func TestRun_NoArgsShowsHelpReturnsSuccess(t *testing.T) {
 	}
 }
 
+func TestRun_InvokesSkillsUpdateCheckForSubcommand(t *testing.T) {
+	resetReportFlags(t)
+
+	origCheck := maybeCheckForSkillUpdates
+	t.Cleanup(func() { maybeCheckForSkillUpdates = origCheck })
+
+	called := false
+	maybeCheckForSkillUpdates = func(ctx context.Context) {
+		called = true
+	}
+
+	_, _ = captureCommandOutput(t, func() {
+		code := Run([]string{"completion", "--shell", "bash"}, "1.0.0")
+		if code != ExitSuccess {
+			t.Fatalf("Run() exit code = %d, want %d", code, ExitSuccess)
+		}
+	})
+
+	if !called {
+		t.Fatal("expected skills update check to be invoked")
+	}
+}
+
+func TestRun_SkipsSkillsUpdateCheckForRootInvocation(t *testing.T) {
+	resetReportFlags(t)
+
+	origCheck := maybeCheckForSkillUpdates
+	t.Cleanup(func() { maybeCheckForSkillUpdates = origCheck })
+
+	called := false
+	maybeCheckForSkillUpdates = func(ctx context.Context) {
+		called = true
+	}
+
+	_, _ = captureCommandOutput(t, func() {
+		code := Run([]string{}, "1.0.0")
+		if code != ExitSuccess {
+			t.Fatalf("Run() exit code = %d, want %d", code, ExitSuccess)
+		}
+	})
+
+	if called {
+		t.Fatal("expected skills update check to be skipped for root invocation")
+	}
+}
+
 func TestHasPositionalArgs_EndOfFlagsSeparator(t *testing.T) {
 	root := RootCommand("1.0.0")
 
