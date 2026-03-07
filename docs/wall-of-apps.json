@@ -62,6 +62,13 @@
     "platform": ["iOS", "macOS"]
   },
   {
+    "app": "Cubby",
+    "link": "https://apps.apple.com/app/id6751732388",
+    "creator": "barronlroth",
+    "icon": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/2b/cf/8b/2bcf8b94-8050-926d-bce1-b95266a061d0/AppIcon-0-0-1x_U007ephone-0-1-85-220.png/512x512bb.jpg",
+    "platform": ["iOS"]
+  },
+  {
     "app": "Dandelion",
     "link": "https://apps.apple.com/us/app/dandelion-write-and-let-go/id6757363901",
     "creator": "joeycast",
