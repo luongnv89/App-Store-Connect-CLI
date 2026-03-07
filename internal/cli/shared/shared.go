@@ -62,6 +62,8 @@ var (
 	privateKeyTempPath  string
 	privateKeyTempKey   string
 	privateKeyTempPaths []string
+	strictAuthWarnMu    sync.Mutex
+	strictAuthWarned    = map[string]struct{}{}
 	selectedProfile     string
 	strictAuth          bool
 	retryLog            OptionalBool
@@ -605,14 +607,36 @@ func strictAuthEnabled() bool {
 	case "0", "f", "false", "no", "n", "off":
 		return false
 	default:
-		fmt.Fprintf(
-			os.Stderr,
-			"Warning: invalid %s value %q (expected true/false, 1/0, yes/no, y/n, or on/off); strict auth enabled conservatively\n",
-			strictAuthEnvVar,
-			value,
-		)
+		warnInvalidStrictAuthValueOnce(value)
 		return true
 	}
+}
+
+func warnInvalidStrictAuthValueOnce(value string) {
+	if value == "" {
+		return
+	}
+
+	strictAuthWarnMu.Lock()
+	if _, ok := strictAuthWarned[value]; ok {
+		strictAuthWarnMu.Unlock()
+		return
+	}
+	strictAuthWarned[value] = struct{}{}
+	strictAuthWarnMu.Unlock()
+
+	fmt.Fprintf(
+		os.Stderr,
+		"Warning: invalid %s value %q (expected true/false, 1/0, yes/no, y/n, or on/off); strict auth enabled conservatively\n",
+		strictAuthEnvVar,
+		value,
+	)
+}
+
+func resetInvalidStrictAuthWarnings() {
+	strictAuthWarnMu.Lock()
+	defer strictAuthWarnMu.Unlock()
+	strictAuthWarned = map[string]struct{}{}
 }
 
 func printOutput(data any, format string, pretty bool) error {
