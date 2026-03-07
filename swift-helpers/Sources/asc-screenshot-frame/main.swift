@@ -2,6 +2,7 @@ import ArgumentParser
 import CoreImage
 import CoreImage.CIFilterBuiltins
 import Foundation
+import HelperImageSupport
 import Metal
 import UniformTypeIdentifiers
 
@@ -82,39 +83,13 @@ enum DeviceType: String, CaseIterable {
     }
 }
 
-// MARK: - CIContext Cache
-// Reuse Metal-accelerated context across multiple operations
+// MARK: - Shared Image Support
 
-class CIContextCache {
-    static let shared = CIContextCache()
-    
-    let context: CIContext
-    
-    private init() {
-        if let device = MTLCreateSystemDefaultDevice() {
-            context = CIContext(mtlDevice: device, options: [
-                .workingColorSpace: CGColorSpaceCreateDeviceRGB(),
-                .outputColorSpace: CGColorSpaceCreateDeviceRGB(),
-                .cacheIntermediates: false
-            ])
-        } else {
-            context = CIContext(options: [
-                .workingColorSpace: CGColorSpaceCreateDeviceRGB(),
-                .outputColorSpace: CGColorSpaceCreateDeviceRGB()
-            ])
-        }
-    }
+enum ScreenshotFrameContextCache {
+    static let context = HelperImageSupport.makeCIContext()
 }
 
 // MARK: - Image Processing
-
-func loadImage(from path: String) throws -> CIImage {
-    let url = URL(fileURLWithPath: path)
-    guard let image = CIImage(contentsOf: url) else {
-        throw ScreenshotFrameError.imageLoadFailed("Could not load image from \(path)")
-    }
-    return image
-}
 
 func resizeImage(_ image: CIImage, to size: CGSize) -> CIImage {
     let scaleX = size.width / image.extent.width
@@ -137,7 +112,7 @@ func createFramedScreenshot(
     padding: Double = 40
 ) throws {
     // Load screenshot
-    let screenshot = try loadImage(from: screenshotPath)
+    let screenshot = try HelperImageSupport.loadImage(from: screenshotPath) { ScreenshotFrameError.imageLoadFailed($0) }
     
     // Get target dimensions
     let targetSize = deviceType.displaySize
@@ -172,9 +147,7 @@ func createFramedScreenshot(
     }
     
     // Export using cached context
-    let cache = CIContextCache.shared
-    
-    guard let cgImage = cache.context.createCGImage(outputImage, from: outputImage.extent) else {
+    guard let cgImage = ScreenshotFrameContextCache.context.createCGImage(outputImage, from: outputImage.extent) else {
         throw ScreenshotFrameError.processingFailed("Failed to render final image")
     }
     
@@ -254,7 +227,7 @@ struct FrameCommand: ParsableCommand {
         }
         
         if validationOnly {
-            let image = try loadImage(from: input)
+            let image = try HelperImageSupport.loadImage(from: input) { ScreenshotFrameError.imageLoadFailed($0) }
             let isValid = validateScreenshotDimensions(image, for: deviceType)
             let dict: [String: Any] = [
                 "valid": isValid,

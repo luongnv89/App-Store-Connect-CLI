@@ -2,6 +2,7 @@ import ArgumentParser
 import CoreImage
 import CoreImage.CIFilterBuiltins
 import Foundation
+import HelperImageSupport
 import Metal
 import simd
 import UniformTypeIdentifiers
@@ -58,31 +59,15 @@ enum OptimizationPreset: String, CaseIterable {
     }
 }
 
-// MARK: - CIContext Cache
-// Reuse Metal-accelerated context across multiple operations (saves ~5-10ms per image)
+// MARK: - Shared Image Support
 
-class CIContextCache {
-    static let shared = CIContextCache()
+enum ImageOptimizeContextCache {
+    static let context = HelperImageSupport.makeCIContext(includeWorkingFormat: true)
+}
+
+func renderImage(_ image: CIImage, format: String, preset: OptimizationPreset) throws -> Data {
+    let context = ImageOptimizeContextCache.context
     
-    let context: CIContext
-    
-    private init() {
-        if let device = MTLCreateSystemDefaultDevice() {
-            context = CIContext(mtlDevice: device, options: [
-                .workingColorSpace: CGColorSpaceCreateDeviceRGB(),
-                .outputColorSpace: CGColorSpaceCreateDeviceRGB(),
-                .workingFormat: CIFormat.RGBAf,
-                .cacheIntermediates: false
-            ])
-        } else {
-            context = CIContext(options: [
-                .workingColorSpace: CGColorSpaceCreateDeviceRGB(),
-                .outputColorSpace: CGColorSpaceCreateDeviceRGB()
-            ])
-        }
-    }
-    
-    func render(_ image: CIImage, format: String, preset: OptimizationPreset) throws -> Data {
         switch format.lowercased() {
         case "jpeg", "jpg":
             let jpegOptions: [CIImageRepresentationOption: Any] = [
@@ -111,18 +96,9 @@ class CIContextCache {
         default:
             throw ImageOptimizeError.unsupportedFormat(format)
         }
-    }
 }
 
 // MARK: - Image Processing
-
-func loadImage(from path: String) throws -> CIImage {
-    let url = URL(fileURLWithPath: path)
-    guard let image = CIImage(contentsOf: url) else {
-        throw ImageOptimizeError.imageLoadFailed("Could not load image from \(path)")
-    }
-    return image
-}
 
 func resizeImage(_ image: CIImage, maxDimension: Int) -> CIImage {
     let extent = image.extent
@@ -148,7 +124,7 @@ func optimizeImage(
     preset: OptimizationPreset,
     format: String = "jpeg"
 ) throws -> [String: Any] {
-    let image = try loadImage(from: inputPath)
+    let image = try HelperImageSupport.loadImage(from: inputPath) { ImageOptimizeError.imageLoadFailed($0) }
     
     var processedImage = image
     
@@ -157,9 +133,7 @@ func optimizeImage(
         processedImage = resizeImage(processedImage, maxDimension: maxDim)
     }
     
-    // Use cached Metal-accelerated context (saves ~5-10ms per image)
-    let cache = CIContextCache.shared
-    let data = try cache.render(processedImage, format: format, preset: preset)
+    let data = try renderImage(processedImage, format: format, preset: preset)
     
     // Write output
     let outputURL = URL(fileURLWithPath: outputPath)
@@ -420,7 +394,7 @@ struct InfoCommand: ParsableCommand {
     var path: String
     
     mutating func run() throws {
-        let image = try loadImage(from: path)
+        let image = try HelperImageSupport.loadImage(from: path) { ImageOptimizeError.imageLoadFailed($0) }
         let fm = FileManager.default
         
         let attributes = try fm.attributesOfItem(atPath: path)

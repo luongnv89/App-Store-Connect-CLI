@@ -326,6 +326,59 @@ func TestBuildsPackageCommand_RejectsNonAppInput(t *testing.T) {
 	}
 }
 
+func TestPackageWithGo_IgnoresAPITimeoutEnvForLocalWork(t *testing.T) {
+	t.Setenv("ASC_TIMEOUT", "1ns")
+
+	tempDir := t.TempDir()
+	appDir := filepath.Join(tempDir, "TestApp.app")
+	if err := os.MkdirAll(appDir, 0o755); err != nil {
+		t.Fatalf("Failed to create app dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "Info.plist"), []byte("plist"), 0o644); err != nil {
+		t.Fatalf("Failed to create Info.plist: %v", err)
+	}
+
+	outputPath := filepath.Join(tempDir, "TestApp.ipa")
+	result, err := packageWithGo(context.Background(), appDir, outputPath, 6)
+	if err != nil {
+		t.Fatalf("packageWithGo should ignore API timeout env for local work: %v", err)
+	}
+	if result == nil || !result.Success {
+		t.Fatalf("Expected successful packaging result, got %#v", result)
+	}
+}
+
+func TestValidateWithGo_IgnoresAPITimeoutEnvForLocalWork(t *testing.T) {
+	t.Setenv("ASC_TIMEOUT", "1ns")
+
+	tempDir := t.TempDir()
+	appDir := filepath.Join(tempDir, "TestApp.app")
+	infoPlist := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundleVersion</key>
+    <string>100</string>
+</dict>
+</plist>`
+	if err := os.MkdirAll(appDir, 0o755); err != nil {
+		t.Fatalf("Failed to create app dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "Info.plist"), []byte(infoPlist), 0o644); err != nil {
+		t.Fatalf("Failed to create Info.plist: %v", err)
+	}
+
+	result, err := validateWithGo(context.Background(), appDir, true)
+	if err != nil {
+		t.Fatalf("validateWithGo should ignore API timeout env for local work: %v", err)
+	}
+	if valid, ok := result["valid"].(bool); !ok || !valid {
+		t.Fatalf("Expected valid local validation result, got %#v", result["valid"])
+	}
+}
+
 func TestCalculateAppSize(t *testing.T) {
 	tempDir := t.TempDir()
 

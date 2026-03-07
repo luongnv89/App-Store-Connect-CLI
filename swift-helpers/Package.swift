@@ -28,6 +28,11 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0")
     ],
     targets: [
+        .target(
+            name: "HelperImageSupport",
+            path: "Sources/HelperImageSupport"
+        ),
+
         // JWT signing helper - CryptoKit hardware-accelerated
         .executableTarget(
             name: "asc-jwt-sign",
@@ -41,7 +46,8 @@ let package = Package(
         .executableTarget(
             name: "asc-screenshot-frame",
             dependencies: [
-                .product(name: "ArgumentParser", package: "swift-argument-parser")
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                "HelperImageSupport"
             ],
             path: "Sources/asc-screenshot-frame"
         ),
@@ -50,7 +56,8 @@ let package = Package(
         .executableTarget(
             name: "asc-image-optimize",
             dependencies: [
-                .product(name: "ArgumentParser", package: "swift-argument-parser")
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                "HelperImageSupport"
             ],
             path: "Sources/asc-image-optimize"
         ),

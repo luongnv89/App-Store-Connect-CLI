@@ -108,8 +108,10 @@ type packagingResult struct {
 func packageWithGo(ctx context.Context, appPath, outputPath string, level int) (*packagingResult, error) {
 	startTime := time.Now()
 
-	requestCtx, cancel := shared.ContextWithTimeout(ctx)
-	defer cancel()
+	requestCtx := ctx
+	if requestCtx == nil {
+		requestCtx = context.Background()
+	}
 
 	// Calculate original size
 	originalSize, err := calculateAppSize(requestCtx, appPath)
@@ -448,8 +450,10 @@ Examples:
 
 // validateWithGo uses Go to validate the bundle
 func validateWithGo(ctx context.Context, path string, strict bool) (map[string]interface{}, error) {
-	requestCtx, cancel := shared.ContextWithTimeout(ctx)
-	defer cancel()
+	requestCtx := ctx
+	if requestCtx == nil {
+		requestCtx = context.Background()
+	}
 
 	info, err := os.Stat(path)
 	if err != nil {

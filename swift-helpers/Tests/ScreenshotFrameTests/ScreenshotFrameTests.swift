@@ -1,5 +1,6 @@
 import XCTest
 import CoreImage
+import HelperImageSupport
 @testable import asc_screenshot_frame
 
 final class ScreenshotFrameTests: XCTestCase {
@@ -54,7 +55,7 @@ final class ScreenshotFrameTests: XCTestCase {
     }
     
     func testLoadImageInvalidPath() {
-        XCTAssertThrowsError(try loadImage(from: "/nonexistent/path.png")) { error in
+        XCTAssertThrowsError(try HelperImageSupport.loadImage(from: "/nonexistent/path.png") { ScreenshotFrameError.imageLoadFailed($0) }) { error in
             guard let frameError = error as? ScreenshotFrameError,
                   case .imageLoadFailed = frameError else {
                 XCTFail("Expected imageLoadFailed error")
