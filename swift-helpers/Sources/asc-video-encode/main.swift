@@ -83,6 +83,11 @@ func compressionRatio(originalFileSize: Int64, outputFileSize: Int64) -> Double 
     return ratio < 1 ? 1.0 : ratio
 }
 
+func orientedSize(for size: CGSize, applying transform: CGAffineTransform) -> CGSize {
+    let rect = CGRect(origin: .zero, size: size).applying(transform)
+    return CGSize(width: abs(rect.width), height: abs(rect.height))
+}
+
 // MARK: - Video Processing
 
 func encodeVideo(
@@ -102,7 +107,7 @@ func encodeVideo(
     
     // Get original properties
     let originalDuration = asset.duration.seconds
-    let originalSize = videoTrack.naturalSize
+    let originalSize = orientedSize(for: videoTrack.naturalSize, applying: videoTrack.preferredTransform)
     let originalBitrate = videoTrack.estimatedDataRate
     
     // Create composition
@@ -141,6 +146,7 @@ func encodeVideo(
     instruction.timeRange = CMTimeRangeMake(start: .zero, duration: asset.duration)
     
     let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionTrack)
+    layerInstruction.setTransform(videoTrack.preferredTransform, at: .zero)
     instruction.layerInstructions = [layerInstruction]
     videoComposition.instructions = [instruction]
     

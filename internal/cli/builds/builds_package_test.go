@@ -391,6 +391,40 @@ func TestCopyAppBundle(t *testing.T) {
 	}
 }
 
+func TestCopyAppBundle_PreservesSymlink(t *testing.T) {
+	srcDir := t.TempDir()
+	dstDir := filepath.Join(t.TempDir(), "dest")
+
+	targetPath := filepath.Join(srcDir, "target.txt")
+	if err := os.WriteFile(targetPath, []byte("target"), 0o644); err != nil {
+		t.Fatalf("Failed to create target file: %v", err)
+	}
+
+	linkPath := filepath.Join(srcDir, "link.txt")
+	if err := os.Symlink("target.txt", linkPath); err != nil {
+		t.Skipf("symlink not supported: %v", err)
+	}
+
+	if err := copyAppBundle(context.Background(), srcDir, dstDir); err != nil {
+		t.Fatalf("copyAppBundle failed: %v", err)
+	}
+
+	info, err := os.Lstat(filepath.Join(dstDir, "link.txt"))
+	if err != nil {
+		t.Fatalf("Lstat copied symlink: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("Expected copied entry to remain a symlink, mode=%v", info.Mode())
+	}
+	target, err := os.Readlink(filepath.Join(dstDir, "link.txt"))
+	if err != nil {
+		t.Fatalf("Readlink copied symlink: %v", err)
+	}
+	if target != "target.txt" {
+		t.Fatalf("Expected symlink target %q, got %q", "target.txt", target)
+	}
+}
+
 func TestGetFileSize(t *testing.T) {
 	tempDir := t.TempDir()
 	filePath := filepath.Join(tempDir, "test.txt")
@@ -560,5 +594,36 @@ func TestCreateIPAFromPayload(t *testing.T) {
 		if !found {
 			t.Errorf("Expected file not found in IPA: %s", name)
 		}
+	}
+}
+
+func TestCreateIPAFromPayload_RejectsSymlinkOutputPath(t *testing.T) {
+	tempDir := t.TempDir()
+	payloadDir := filepath.Join(tempDir, "Payload")
+	appDir := filepath.Join(payloadDir, "TestApp.app")
+
+	if err := os.MkdirAll(appDir, 0o755); err != nil {
+		t.Fatalf("Failed to create app dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "TestApp"), []byte("binary content"), 0o755); err != nil {
+		t.Fatalf("Failed to create binary: %v", err)
+	}
+
+	targetPath := filepath.Join(tempDir, "target.ipa")
+	if err := os.WriteFile(targetPath, []byte("existing"), 0o644); err != nil {
+		t.Fatalf("Failed to create target file: %v", err)
+	}
+
+	linkPath := filepath.Join(tempDir, "output.ipa")
+	if err := os.Symlink(targetPath, linkPath); err != nil {
+		t.Skipf("symlink not supported: %v", err)
+	}
+
+	err := createIPAFromPayload(context.Background(), payloadDir, linkPath, 6)
+	if err == nil {
+		t.Fatal("Expected symlink output path to be rejected")
+	}
+	if !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("Expected symlink-related error, got %v", err)
 	}
 }

@@ -201,6 +201,19 @@ func copyAppBundle(ctx context.Context, src, dst string) error {
 
 		dstPath := filepath.Join(dst, relPath)
 
+		if info.Mode()&os.ModeSymlink != 0 {
+			if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
+				return err
+			}
+
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+
+			return os.Symlink(target, dstPath)
+		}
+
 		if info.IsDir() {
 			return os.MkdirAll(dstPath, info.Mode())
 		}
@@ -242,71 +255,69 @@ func createIPAFromPayload(ctx context.Context, payloadDir, outputPath string, le
 		level = 9
 	}
 
-	file, err := os.Create(outputPath)
-	if err != nil {
-		return err
-	}
+	_, err := shared.SafeWriteFileNoSymlink(
+		outputPath,
+		0o644,
+		true,
+		"asc-ipa-*.tmp",
+		"asc-ipa-*.bak",
+		func(file *os.File) (int64, error) {
+			zipWriter := zip.NewWriter(file)
+			if level > 0 {
+				zipWriter.RegisterCompressor(zip.Deflate, func(out io.Writer) (io.WriteCloser, error) {
+					return flate.NewWriter(out, level)
+				})
+			}
 
-	// Set compression level on the writer (0 = store, 9 = best compression)
-	zipWriter := zip.NewWriter(file)
-	if level > 0 {
-		zipWriter.RegisterCompressor(zip.Deflate, func(out io.Writer) (io.WriteCloser, error) {
-			return flate.NewWriter(out, level)
-		})
-	}
+			walkErr := filepath.Walk(payloadDir, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if err := ctx.Err(); err != nil {
+					return err
+				}
 
-	// Walk through Payload directory and add files to zip
-	walkErr := filepath.Walk(payloadDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
+				relPath, err := filepath.Rel(filepath.Dir(payloadDir), path)
+				if err != nil {
+					return err
+				}
 
-		relPath, err := filepath.Rel(filepath.Dir(payloadDir), path)
-		if err != nil {
-			return err
-		}
+				if info.IsDir() {
+					return nil
+				}
 
-		if info.IsDir() {
-			return nil
-		}
+				header, err := zip.FileInfoHeader(info)
+				if err != nil {
+					return err
+				}
+				header.Name = filepath.ToSlash(relPath)
+				if level == 0 {
+					header.Method = zip.Store
+				} else {
+					header.Method = zip.Deflate
+				}
+				header.Modified = info.ModTime()
 
-		header, err := zip.FileInfoHeader(info)
-		if err != nil {
-			return err
-		}
-		header.Name = filepath.ToSlash(relPath)
-		if level == 0 {
-			header.Method = zip.Store
-		} else {
-			header.Method = zip.Deflate
-		}
-		header.Modified = info.ModTime()
+				writer, err := zipWriter.CreateHeader(header)
+				if err != nil {
+					return err
+				}
 
-		writer, err := zipWriter.CreateHeader(header)
-		if err != nil {
-			return err
-		}
+				srcFile, err := os.Open(path)
+				if err != nil {
+					return err
+				}
+				defer srcFile.Close()
 
-		srcFile, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer srcFile.Close()
-
-		return copyWithContext(ctx, writer, srcFile)
-	})
-
-	if closeErr := zipWriter.Close(); walkErr == nil && closeErr != nil {
-		walkErr = closeErr
-	}
-	if closeErr := file.Close(); walkErr == nil && closeErr != nil {
-		walkErr = closeErr
-	}
-
-	return walkErr
+				return copyWithContext(ctx, writer, srcFile)
+			})
+			if closeErr := zipWriter.Close(); walkErr == nil && closeErr != nil {
+				walkErr = closeErr
+			}
+			return 0, walkErr
+		},
+	)
+	return err
 }
 
 func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader) error {

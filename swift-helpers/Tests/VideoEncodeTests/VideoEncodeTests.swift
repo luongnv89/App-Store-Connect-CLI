@@ -30,4 +30,14 @@ final class VideoEncodeTests: XCTestCase {
         XCTAssertEqual(compressionRatio(originalFileSize: 100, outputFileSize: 200), 1.0)
         XCTAssertEqual(compressionRatio(originalFileSize: 100, outputFileSize: 0), 1.0)
     }
+
+    func testOrientedSizeAppliesTransform() {
+        let portrait = orientedSize(
+            for: CGSize(width: 1920, height: 1080),
+            applying: CGAffineTransform(rotationAngle: .pi / 2)
+        )
+        
+        XCTAssertEqual(portrait.width, 1080, accuracy: 0.001)
+        XCTAssertEqual(portrait.height, 1920, accuracy: 0.001)
+    }
 }
