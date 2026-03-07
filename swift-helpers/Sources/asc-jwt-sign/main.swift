@@ -394,13 +394,7 @@ struct JWTSignCommand: ParsableCommand {
         
         // Exit with error if any failed
         if processedCount < results.count {
-            throw ExitCode(code: EXIT_FAILURE)
+            Foundation.exit(EXIT_FAILURE)
         }
     }
-}
-
-// MARK: - Exit Code Support
-
-struct ExitCode: Error {
-    let code: Int32
 }

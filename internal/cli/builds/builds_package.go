@@ -55,7 +55,7 @@ Examples:
 			if err != nil {
 				return fmt.Errorf("failed to stat app bundle: %w", err)
 			}
-			if err := validateAppBundle(appPathVal, appInfo, false); err != nil {
+			if err := validateAppBundle(ctx, appPathVal, appInfo, false); err != nil {
 				return fmt.Errorf("invalid app bundle: %w", err)
 			}
 
@@ -112,7 +112,7 @@ func packageWithGo(ctx context.Context, appPath, outputPath string, level int) (
 	defer cancel()
 
 	// Calculate original size
-	originalSize, err := calculateAppSize(appPath)
+	originalSize, err := calculateAppSize(requestCtx, appPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate app size: %w", err)
 	}
@@ -133,12 +133,13 @@ func packageWithGo(ctx context.Context, appPath, outputPath string, level int) (
 	// Copy .app bundle to Payload
 	appName := filepath.Base(appPath)
 	destAppPath := filepath.Join(payloadDir, appName)
-	if err := copyAppBundle(appPath, destAppPath); err != nil {
+	if err := copyAppBundle(requestCtx, appPath, destAppPath); err != nil {
 		return nil, fmt.Errorf("failed to copy app bundle: %w", err)
 	}
 
 	// Create IPA using archive/zip
-	if err := createIPAFromPayload(payloadDir, outputPath, level); err != nil {
+	if err := createIPAFromPayload(requestCtx, payloadDir, outputPath, level); err != nil {
+		_ = os.Remove(outputPath)
 		return nil, fmt.Errorf("failed to create IPA: %w", err)
 	}
 
@@ -165,21 +166,17 @@ func packageWithGo(ctx context.Context, appPath, outputPath string, level int) (
 		Method:           "go-zip",
 	}
 
-	// Check for context cancellation
-	select {
-	case <-requestCtx.Done():
-		return nil, requestCtx.Err()
-	default:
-	}
-
 	return result, nil
 }
 
 // calculateAppSize calculates the total size of the app bundle
-func calculateAppSize(appPath string) (int64, error) {
+func calculateAppSize(ctx context.Context, appPath string) (int64, error) {
 	var totalSize int64
 	err := filepath.Walk(appPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if !info.IsDir() {
@@ -191,9 +188,12 @@ func calculateAppSize(appPath string) (int64, error) {
 }
 
 // copyAppBundle copies the app bundle to destination
-func copyAppBundle(src, dst string) error {
+func copyAppBundle(ctx context.Context, src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 
@@ -226,7 +226,7 @@ func copyAppBundle(src, dst string) error {
 		}
 		defer dstFile.Close()
 
-		if _, err := io.Copy(dstFile, srcFile); err != nil {
+		if err := copyWithContext(ctx, dstFile, srcFile); err != nil {
 			return err
 		}
 
@@ -236,7 +236,7 @@ func copyAppBundle(src, dst string) error {
 }
 
 // createIPAFromPayload creates an IPA file from the Payload directory
-func createIPAFromPayload(payloadDir, outputPath string, level int) error {
+func createIPAFromPayload(ctx context.Context, payloadDir, outputPath string, level int) error {
 	// Adjust compression level (Go's zip supports 0-9)
 	if level < 0 {
 		level = 0
@@ -261,6 +261,9 @@ func createIPAFromPayload(payloadDir, outputPath string, level int) error {
 	// Walk through Payload directory and add files to zip
 	walkErr := filepath.Walk(payloadDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 
@@ -296,8 +299,7 @@ func createIPAFromPayload(payloadDir, outputPath string, level int) error {
 		}
 		defer srcFile.Close()
 
-		_, err = io.Copy(writer, srcFile)
-		return err
+		return copyWithContext(ctx, writer, srcFile)
 	})
 
 	if closeErr := zipWriter.Close(); walkErr == nil && closeErr != nil {
@@ -308,6 +310,29 @@ func createIPAFromPayload(payloadDir, outputPath string, level int) error {
 	}
 
 	return walkErr
+}
+
+func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader) error {
+	buf := make([]byte, 32*1024)
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		n, readErr := src.Read(buf)
+		if n > 0 {
+			if _, err := dst.Write(buf[:n]); err != nil {
+				return err
+			}
+		}
+
+		if readErr == io.EOF {
+			return nil
+		}
+		if readErr != nil {
+			return readErr
+		}
+	}
 }
 
 // getFileSize returns the size of a file
@@ -374,7 +399,7 @@ Examples:
 
 // validateWithGo uses Go to validate the bundle
 func validateWithGo(ctx context.Context, path string, strict bool) (map[string]interface{}, error) {
-	_, cancel := shared.ContextWithTimeout(ctx)
+	requestCtx, cancel := shared.ContextWithTimeout(ctx)
 	defer cancel()
 
 	info, err := os.Stat(path)
@@ -386,9 +411,9 @@ func validateWithGo(ctx context.Context, path string, strict bool) (map[string]i
 	var validationErr error
 	switch {
 	case info.IsDir() && ext == ".app":
-		validationErr = validateAppBundle(path, info, strict)
+		validationErr = validateAppBundle(requestCtx, path, info, strict)
 	case !info.IsDir() && ext == ".ipa":
-		validationErr = validateIPA(path, strict)
+		validationErr = validateIPA(requestCtx, path, strict)
 	default:
 		validationErr = fmt.Errorf("path must be a .app bundle or .ipa file")
 	}
@@ -407,7 +432,10 @@ func validateWithGo(ctx context.Context, path string, strict bool) (map[string]i
 	return result, nil
 }
 
-func validateAppBundle(path string, info os.FileInfo, strict bool) error {
+func validateAppBundle(ctx context.Context, path string, info os.FileInfo, strict bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if !info.IsDir() {
 		return fmt.Errorf("app bundle must be a directory")
 	}
@@ -445,7 +473,10 @@ func validateAppBundle(path string, info os.FileInfo, strict bool) error {
 	return nil
 }
 
-func validateIPA(path string, strict bool) error {
+func validateIPA(ctx context.Context, path string, strict bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	info, err := shared.ExtractBundleInfoFromIPA(path)
 	if err != nil {
 		return err

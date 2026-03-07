@@ -164,7 +164,7 @@ func TestCreateIPAFromPayload_Level0ProducesReadableArchive(t *testing.T) {
 	}
 
 	outputPath := filepath.Join(tempDir, "output-store.ipa")
-	if err := createIPAFromPayload(payloadDir, outputPath, 0); err != nil {
+	if err := createIPAFromPayload(context.Background(), payloadDir, outputPath, 0); err != nil {
 		t.Fatalf("createIPAFromPayload failed: %v", err)
 	}
 
@@ -232,7 +232,7 @@ func TestValidateWithGo_SupportsAppBundlesAndIPAFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(ipaAppDir, "Info.plist"), []byte(infoPlist), 0o644); err != nil {
 		t.Fatalf("Failed to create IPA Info.plist: %v", err)
 	}
-	if err := createIPAFromPayload(ipaPayloadDir, ipaPath, 6); err != nil {
+	if err := createIPAFromPayload(context.Background(), ipaPayloadDir, ipaPath, 6); err != nil {
 		t.Fatalf("Failed to create IPA file: %v", err)
 	}
 	if err := os.WriteFile(otherPath, []byte("text content"), 0o644); err != nil {
@@ -333,7 +333,7 @@ func TestCalculateAppSize(t *testing.T) {
 
 	expectedSize := int64(len(file1) + len(file2))
 
-	size, err := calculateAppSize(tempDir)
+	size, err := calculateAppSize(context.Background(), tempDir)
 	if err != nil {
 		t.Fatalf("calculateAppSize failed: %v", err)
 	}
@@ -362,7 +362,7 @@ func TestCopyAppBundle(t *testing.T) {
 	}
 
 	// Copy
-	if err := copyAppBundle(srcDir, dstDir); err != nil {
+	if err := copyAppBundle(context.Background(), srcDir, dstDir); err != nil {
 		t.Fatalf("copyAppBundle failed: %v", err)
 	}
 
@@ -437,15 +437,12 @@ func TestPackageWithGo_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	// This should still work because the context is only checked at the end
-	// In a real scenario with slow operations, cancellation would be respected
 	result, err := packageWithGo(ctx, appDir, outputPath, 6)
-
-	// The function may or may not return an error depending on timing
-	if err != nil {
-		t.Logf("Got expected cancellation error: %v", err)
-	} else {
-		t.Logf("Operation completed before cancellation: %+v", result)
+	if err == nil {
+		t.Fatalf("Expected cancellation error, got success: %+v", result)
+	}
+	if _, statErr := os.Stat(outputPath); !os.IsNotExist(statErr) {
+		t.Fatalf("Expected no IPA output on cancellation, stat error: %v", statErr)
 	}
 }
 
@@ -518,7 +515,7 @@ func TestCreateIPAFromPayload(t *testing.T) {
 	outputPath := filepath.Join(tempDir, "output.ipa")
 
 	// Create IPA
-	if err := createIPAFromPayload(payloadDir, outputPath, 6); err != nil {
+	if err := createIPAFromPayload(context.Background(), payloadDir, outputPath, 6); err != nil {
 		t.Fatalf("createIPAFromPayload failed: %v", err)
 	}
 
