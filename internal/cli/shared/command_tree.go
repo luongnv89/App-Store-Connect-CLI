@@ -4,22 +4,11 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
-	"os"
 	"strings"
 	"sync"
 
 	"github.com/peterbourgon/ff/v3/ffcli"
 )
-
-// CommandTreeDeprecationConfig controls how a command tree is marked deprecated.
-type CommandTreeDeprecationConfig struct {
-	CurrentPrefix     string
-	ReplacementPrefix string
-	Notice            string
-	Warning           string
-	RewriteLongHelp   bool
-}
 
 var hiddenCommandHelpRegistry struct {
 	sync.RWMutex
@@ -92,59 +81,6 @@ func VisibleHelpFlags(fs *flag.FlagSet) []*flag.Flag {
 		visible = append(visible, f)
 	})
 	return visible
-}
-
-// DeprecateCommandTree marks a command tree as deprecated while preserving runtime behavior.
-func DeprecateCommandTree(cmd *ffcli.Command, cfg CommandTreeDeprecationConfig) *ffcli.Command {
-	if cmd == nil {
-		return nil
-	}
-
-	rewriteCommandTree(cmd, func(node *ffcli.Command) {
-		notice := strings.TrimSpace(cfg.Notice)
-		if notice == "" && cfg.CurrentPrefix != "" && cfg.ReplacementPrefix != "" {
-			replacement := commandPathFromUsage(strings.ReplaceAll(node.ShortUsage, cfg.CurrentPrefix, cfg.ReplacementPrefix))
-			if replacement != "" {
-				notice = fmt.Sprintf("DEPRECATED: Use %q instead.", replacement)
-			}
-		}
-
-		warning := strings.TrimSpace(cfg.Warning)
-		if warning == "" && cfg.CurrentPrefix != "" && cfg.ReplacementPrefix != "" {
-			current := commandPathFromUsage(node.ShortUsage)
-			replacement := commandPathFromUsage(strings.ReplaceAll(node.ShortUsage, cfg.CurrentPrefix, cfg.ReplacementPrefix))
-			if current != "" && replacement != "" {
-				warning = fmt.Sprintf("Warning: %q is deprecated. Use %q instead.", current, replacement)
-			}
-		}
-
-		if notice != "" {
-			node.ShortHelp = notice
-
-			originalLongHelp := strings.TrimSpace(node.LongHelp)
-			if cfg.RewriteLongHelp && cfg.CurrentPrefix != "" && cfg.ReplacementPrefix != "" && originalLongHelp != "" {
-				originalLongHelp = strings.ReplaceAll(originalLongHelp, cfg.CurrentPrefix, cfg.ReplacementPrefix)
-			}
-
-			if originalLongHelp == "" {
-				node.LongHelp = notice
-			} else {
-				node.LongHelp = notice + "\n\n" + originalLongHelp
-			}
-		} else if cfg.RewriteLongHelp && cfg.CurrentPrefix != "" && cfg.ReplacementPrefix != "" && strings.TrimSpace(node.LongHelp) != "" {
-			node.LongHelp = strings.ReplaceAll(node.LongHelp, cfg.CurrentPrefix, cfg.ReplacementPrefix)
-		}
-
-		if warning != "" && node.Exec != nil {
-			originalExec := node.Exec
-			node.Exec = func(ctx context.Context, args []string) error {
-				fmt.Fprintln(os.Stderr, warning)
-				return originalExec(ctx, args)
-			}
-		}
-	})
-
-	return cmd
 }
 
 func rewriteCommandTree(cmd *ffcli.Command, visit func(node *ffcli.Command)) {
