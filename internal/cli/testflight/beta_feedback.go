@@ -305,6 +305,7 @@ func deprecatedBetaFeedbackCrashSubmissionsGetAliasCommand() *ffcli.Command {
 	fs := flag.NewFlagSet("get", flag.ExitOnError)
 
 	id := fs.String("id", "", "Beta feedback crash submission ID")
+	submissionID := fs.String("submission-id", "", "Crash submission ID")
 	output := shared.BindOutputFlags(fs)
 
 	return &ffcli.Command{
@@ -315,9 +316,13 @@ func deprecatedBetaFeedbackCrashSubmissionsGetAliasCommand() *ffcli.Command {
 		FlagSet:    fs,
 		UsageFunc:  shared.DeprecatedUsageFunc,
 		Exec: func(ctx context.Context, args []string) error {
-			idValue := strings.TrimSpace(*id)
+			idValue, err := resolveLegacyAliasID(strings.TrimSpace(*id), strings.TrimSpace(*submissionID), "--submission-id")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+				return flag.ErrHelp
+			}
 			if idValue == "" {
-				fmt.Fprintln(os.Stderr, "Error: --id is required")
+				fmt.Fprintln(os.Stderr, "Error: --submission-id is required")
 				return flag.ErrHelp
 			}
 			return runCrashSubmissionView(ctx, idValue, output)
@@ -329,6 +334,7 @@ func deprecatedBetaFeedbackCrashSubmissionsDeleteAliasCommand() *ffcli.Command {
 	fs := flag.NewFlagSet("delete", flag.ExitOnError)
 
 	id := fs.String("id", "", "Beta feedback crash submission ID")
+	submissionID := fs.String("submission-id", "", "Crash submission ID")
 	confirm := fs.Bool("confirm", false, "Confirm deletion")
 	output := shared.BindOutputFlags(fs)
 
@@ -340,9 +346,13 @@ func deprecatedBetaFeedbackCrashSubmissionsDeleteAliasCommand() *ffcli.Command {
 		FlagSet:    fs,
 		UsageFunc:  shared.DeprecatedUsageFunc,
 		Exec: func(ctx context.Context, args []string) error {
-			idValue := strings.TrimSpace(*id)
+			idValue, err := resolveLegacyAliasID(strings.TrimSpace(*id), strings.TrimSpace(*submissionID), "--submission-id")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+				return flag.ErrHelp
+			}
 			if idValue == "" {
-				fmt.Fprintln(os.Stderr, "Error: --id is required")
+				fmt.Fprintln(os.Stderr, "Error: --submission-id is required")
 				return flag.ErrHelp
 			}
 			if !*confirm {
@@ -378,6 +388,7 @@ func deprecatedBetaFeedbackScreenshotSubmissionsGetAliasCommand() *ffcli.Command
 	fs := flag.NewFlagSet("get", flag.ExitOnError)
 
 	id := fs.String("id", "", "Beta feedback screenshot submission ID")
+	submissionID := fs.String("submission-id", "", "Feedback submission ID")
 	output := shared.BindOutputFlags(fs)
 
 	return &ffcli.Command{
@@ -388,9 +399,13 @@ func deprecatedBetaFeedbackScreenshotSubmissionsGetAliasCommand() *ffcli.Command
 		FlagSet:    fs,
 		UsageFunc:  shared.DeprecatedUsageFunc,
 		Exec: func(ctx context.Context, args []string) error {
-			idValue := strings.TrimSpace(*id)
+			idValue, err := resolveLegacyAliasID(strings.TrimSpace(*id), strings.TrimSpace(*submissionID), "--submission-id")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+				return flag.ErrHelp
+			}
 			if idValue == "" {
-				fmt.Fprintln(os.Stderr, "Error: --id is required")
+				fmt.Fprintln(os.Stderr, "Error: --submission-id is required")
 				return flag.ErrHelp
 			}
 			return runFeedbackSubmissionView(ctx, idValue, output)
@@ -402,6 +417,7 @@ func deprecatedBetaFeedbackScreenshotSubmissionsDeleteAliasCommand() *ffcli.Comm
 	fs := flag.NewFlagSet("delete", flag.ExitOnError)
 
 	id := fs.String("id", "", "Beta feedback screenshot submission ID")
+	submissionID := fs.String("submission-id", "", "Feedback submission ID")
 	confirm := fs.Bool("confirm", false, "Confirm deletion")
 	output := shared.BindOutputFlags(fs)
 
@@ -413,9 +429,13 @@ func deprecatedBetaFeedbackScreenshotSubmissionsDeleteAliasCommand() *ffcli.Comm
 		FlagSet:    fs,
 		UsageFunc:  shared.DeprecatedUsageFunc,
 		Exec: func(ctx context.Context, args []string) error {
-			idValue := strings.TrimSpace(*id)
+			idValue, err := resolveLegacyAliasID(strings.TrimSpace(*id), strings.TrimSpace(*submissionID), "--submission-id")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+				return flag.ErrHelp
+			}
 			if idValue == "" {
-				fmt.Fprintln(os.Stderr, "Error: --id is required")
+				fmt.Fprintln(os.Stderr, "Error: --submission-id is required")
 				return flag.ErrHelp
 			}
 			if !*confirm {
@@ -450,6 +470,7 @@ func deprecatedBetaFeedbackCrashLogGetAliasCommand() *ffcli.Command {
 	fs := flag.NewFlagSet("get", flag.ExitOnError)
 
 	id := fs.String("id", "", "Beta feedback crash submission ID")
+	submissionID := fs.String("submission-id", "", "Crash submission ID")
 	output := shared.BindOutputFlags(fs)
 
 	return &ffcli.Command{
@@ -460,13 +481,28 @@ func deprecatedBetaFeedbackCrashLogGetAliasCommand() *ffcli.Command {
 		FlagSet:    fs,
 		UsageFunc:  shared.DeprecatedUsageFunc,
 		Exec: func(ctx context.Context, args []string) error {
-			idValue := strings.TrimSpace(*id)
+			idValue, err := resolveLegacyAliasID(strings.TrimSpace(*id), strings.TrimSpace(*submissionID), "--submission-id")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+				return flag.ErrHelp
+			}
 			if idValue == "" {
-				fmt.Fprintln(os.Stderr, "Error: --id is required")
+				fmt.Fprintln(os.Stderr, "Error: --submission-id is required")
 				return flag.ErrHelp
 			}
 			return runCrashLogBySubmissionID(ctx, idValue, output)
 		},
+	}
+}
+
+func resolveLegacyAliasID(legacyID, canonicalID, canonicalFlag string) (string, error) {
+	switch {
+	case legacyID != "" && canonicalID != "" && legacyID != canonicalID:
+		return "", fmt.Errorf("%s and --id must match", canonicalFlag)
+	case canonicalID != "":
+		return canonicalID, nil
+	default:
+		return legacyID, nil
 	}
 }
 

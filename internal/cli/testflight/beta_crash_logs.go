@@ -37,6 +37,7 @@ func deprecatedBetaCrashLogsGetAliasCommand() *ffcli.Command {
 	fs := flag.NewFlagSet("get", flag.ExitOnError)
 
 	id := fs.String("id", "", "Beta crash log ID")
+	crashLogID := fs.String("crash-log-id", "", "Crash log ID")
 	output := shared.BindOutputFlags(fs)
 
 	return &ffcli.Command{
@@ -47,9 +48,13 @@ func deprecatedBetaCrashLogsGetAliasCommand() *ffcli.Command {
 		FlagSet:    fs,
 		UsageFunc:  shared.DeprecatedUsageFunc,
 		Exec: func(ctx context.Context, args []string) error {
-			idValue := strings.TrimSpace(*id)
+			idValue, err := resolveLegacyAliasID(strings.TrimSpace(*id), strings.TrimSpace(*crashLogID), "--crash-log-id")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+				return flag.ErrHelp
+			}
 			if idValue == "" {
-				fmt.Fprintln(os.Stderr, "Error: --id is required")
+				fmt.Fprintln(os.Stderr, "Error: --crash-log-id is required")
 				return flag.ErrHelp
 			}
 			return runCrashLogByCrashLogID(ctx, idValue, output)

@@ -1085,3 +1085,68 @@ func TestLegacyFeedbackAndCrashAliasesWarnAndDelegate(t *testing.T) {
 		})
 	}
 }
+
+func TestLegacyAliasesAcceptCanonicalFlags(t *testing.T) {
+	setupAuth(t)
+	t.Setenv("ASC_CONFIG_PATH", filepath.Join(t.TempDir(), "nonexistent.json"))
+
+	tests := []struct {
+		name     string
+		args     []string
+		wantPath string
+		wantID   string
+	}{
+		{
+			name:     "beta feedback alias accepts submission-id",
+			args:     []string{"testflight", "beta-feedback", "crash-log", "get", "--submission-id", "sub-1"},
+			wantPath: "/v1/betaFeedbackCrashSubmissions/sub-1/crashLog",
+			wantID:   `"id":"log-1"`,
+		},
+		{
+			name:     "beta crash logs alias accepts crash-log-id",
+			args:     []string{"testflight", "beta-crash-logs", "get", "--crash-log-id", "log-1"},
+			wantPath: "/v1/betaCrashLogs/log-1",
+			wantID:   `"id":"log-1"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			originalTransport := http.DefaultTransport
+			t.Cleanup(func() {
+				http.DefaultTransport = originalTransport
+			})
+
+			http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.URL.Path != test.wantPath {
+					t.Fatalf("expected path %s, got %s", test.wantPath, req.URL.Path)
+				}
+				body := `{"data":{"type":"stub","id":"log-1"}}`
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(body)),
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+				}, nil
+			})
+
+			root := RootCommand("1.2.3")
+			root.FlagSet.SetOutput(io.Discard)
+
+			stdout, stderr := captureOutput(t, func() {
+				if err := root.Parse(test.args); err != nil {
+					t.Fatalf("parse error: %v", err)
+				}
+				if err := root.Run(context.Background()); err != nil {
+					t.Fatalf("run error: %v", err)
+				}
+			})
+
+			if stderr != "" {
+				t.Fatalf("expected empty stderr, got %q", stderr)
+			}
+			if !strings.Contains(stdout, test.wantID) {
+				t.Fatalf("expected output to contain %q, got %q", test.wantID, stdout)
+			}
+		})
+	}
+}

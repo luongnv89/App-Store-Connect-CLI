@@ -86,6 +86,7 @@ func rewriteCommandPresentation(cmd *ffcli.Command, oldRootPath, newRootPath str
 
 	pathReplacements := collectCommandPathReplacements(cmd, oldRootPath, newRootPath, nameRenames)
 	rewriteCommandStrings(cmd, pathReplacements)
+	rewriteCommandErrors(cmd, pathReplacements)
 	return cmd
 }
 

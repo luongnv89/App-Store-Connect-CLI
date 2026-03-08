@@ -18,12 +18,12 @@ func TestTestFlightBetaGroupsListRejectsInvalidNextURL(t *testing.T) {
 		{
 			name:    "invalid scheme",
 			next:    "http://api.appstoreconnect.apple.com/v1/betaGroups?cursor=AQ",
-			wantErr: "beta-groups list: --next must be an App Store Connect URL",
+			wantErr: "groups list: --next must be an App Store Connect URL",
 		},
 		{
 			name:    "malformed URL",
 			next:    "https://api.appstoreconnect.apple.com/%zz",
-			wantErr: "beta-groups list: --next must be a valid URL:",
+			wantErr: "groups list: --next must be a valid URL:",
 		},
 	}
 
@@ -128,12 +128,12 @@ func TestTestFlightBetaTestersListRejectsInvalidNextURL(t *testing.T) {
 		{
 			name:    "invalid scheme",
 			next:    "http://api.appstoreconnect.apple.com/v1/betaTesters?cursor=AQ",
-			wantErr: "beta-testers list: --next must be an App Store Connect URL",
+			wantErr: "testers list: --next must be an App Store Connect URL",
 		},
 		{
 			name:    "malformed URL",
 			next:    "https://api.appstoreconnect.apple.com/%zz",
-			wantErr: "beta-testers list: --next must be a valid URL:",
+			wantErr: "testers list: --next must be a valid URL:",
 		},
 	}
 

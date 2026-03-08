@@ -69,21 +69,35 @@ func TestFlightMetricsGroupTestersCommand() *ffcli.Command {
 }
 
 func DeprecatedMetricsTestersAliasCommand() *ffcli.Command {
-	cmd := TestFlightMetricsTestersCommand()
-	cmd.ShortUsage = "asc testflight metrics group-testers --group \"GROUP_ID\""
-	cmd.ShortHelp = "DEPRECATED: use `asc testflight metrics group-testers`."
-	cmd.LongHelp = "DEPRECATED: use `asc testflight metrics group-testers --group GROUP_ID`."
-	cmd.UsageFunc = shared.DeprecatedUsageFunc
-	return hideTestFlightCommand(cmd)
+	return deprecatedAliasCommand(
+		rewriteCommandPresentation(
+			TestFlightMetricsTestersCommand(),
+			"asc testflight metrics testers",
+			"asc testflight metrics group-testers",
+			map[string]string{
+				"testers": "group-testers",
+			},
+		),
+		"asc testflight metrics group-testers --group \"GROUP_ID\"",
+		"Compatibility alias: use `asc testflight metrics group-testers`.",
+		"Compatibility alias: use `asc testflight metrics group-testers --group GROUP_ID`.",
+	)
 }
 
 func DeprecatedMetricsBetaTesterUsagesAliasCommand() *ffcli.Command {
-	cmd := TestFlightMetricsBetaTesterUsagesCommand()
-	cmd.ShortUsage = "asc testflight metrics app-testers --app \"APP_ID\" [flags]"
-	cmd.ShortHelp = "DEPRECATED: use `asc testflight metrics app-testers`."
-	cmd.LongHelp = "DEPRECATED: use `asc testflight metrics app-testers --app APP_ID`."
-	cmd.UsageFunc = shared.DeprecatedUsageFunc
-	return hideTestFlightCommand(cmd)
+	return deprecatedAliasCommand(
+		rewriteCommandPresentation(
+			TestFlightMetricsBetaTesterUsagesCommand(),
+			"asc testflight metrics beta-tester-usages",
+			"asc testflight metrics app-testers",
+			map[string]string{
+				"beta-tester-usages": "app-testers",
+			},
+		),
+		"asc testflight metrics app-testers --app \"APP_ID\" [flags]",
+		"Compatibility alias: use `asc testflight metrics app-testers`.",
+		"Compatibility alias: use `asc testflight metrics app-testers --app APP_ID`.",
+	)
 }
 
 // TestFlightMetricsBetaTesterUsagesCommand fetches app-level beta tester usage metrics.
