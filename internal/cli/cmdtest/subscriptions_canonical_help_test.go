@@ -85,6 +85,21 @@ func TestSubscriptionsHelpShowsCanonicalCommerceSubcommands(t *testing.T) {
 		t.Fatalf("expected subscriptions pricing availability help to drop legacy set example, got %q", availabilityUsage)
 	}
 
+	pricePointsCmd := findSubcommand(root, "subscriptions", "pricing", "price-points")
+	if pricePointsCmd == nil {
+		t.Fatal("expected subscriptions pricing price-points command")
+	}
+	pricePointsUsage := pricePointsCmd.UsageFunc(pricePointsCmd)
+	if !strings.Contains(pricePointsUsage, `asc subscriptions pricing price-points get --price-point-id "PRICE_POINT_ID"`) {
+		t.Fatalf("expected subscriptions pricing price-points help to show canonical price point selector, got %q", pricePointsUsage)
+	}
+	if !strings.Contains(pricePointsUsage, `asc subscriptions pricing price-points equalizations --price-point-id "PRICE_POINT_ID"`) {
+		t.Fatalf("expected subscriptions pricing price-points help to show canonical equalizations selector, got %q", pricePointsUsage)
+	}
+	if strings.Contains(pricePointsUsage, `asc subscriptions pricing price-points get --id "PRICE_POINT_ID"`) {
+		t.Fatalf("expected subscriptions pricing price-points help to drop legacy --id example, got %q", pricePointsUsage)
+	}
+
 	offersCmd := findSubcommand(root, "subscriptions", "offers")
 	if offersCmd == nil {
 		t.Fatal("expected subscriptions offers command")
@@ -106,6 +121,12 @@ func TestSubscriptionsHelpShowsCanonicalCommerceSubcommands(t *testing.T) {
 	}
 	if !strings.Contains(offerCodesUsage, "  values") {
 		t.Fatalf("expected subscriptions offers offer-codes help to list values, got %q", offerCodesUsage)
+	}
+	if !strings.Contains(offerCodesUsage, `--prices "USA:PRICE_POINT_ID"`) {
+		t.Fatalf("expected subscriptions offers offer-codes help to show territory-qualified price examples, got %q", offerCodesUsage)
+	}
+	if strings.Contains(offerCodesUsage, `--prices "PRICE_ID"`) {
+		t.Fatalf("expected subscriptions offers offer-codes help to drop stale price example, got %q", offerCodesUsage)
 	}
 
 	reviewCmd := findSubcommand(root, "subscriptions", "review")

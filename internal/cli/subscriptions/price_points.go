@@ -25,8 +25,8 @@ func SubscriptionsPricePointsCommand() *ffcli.Command {
 
 Examples:
   asc subscriptions price-points list --subscription-id "SUB_ID"
-  asc subscriptions price-points get --id "PRICE_POINT_ID"
-  asc subscriptions price-points equalizations --id "PRICE_POINT_ID"`,
+  asc subscriptions price-points get --price-point-id "PRICE_POINT_ID"
+  asc subscriptions price-points equalizations --price-point-id "PRICE_POINT_ID"`,
 		FlagSet:   fs,
 		UsageFunc: shared.DefaultUsageFunc,
 		Subcommands: []*ffcli.Command{
