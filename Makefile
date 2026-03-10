@@ -156,25 +156,6 @@ update-schema-index:
 	@echo "$(BLUE)Updating schema index...$(NC)"
 	python3 scripts/generate-schema-index.py
 
-# Generate app metadata and sync Wall docs
-.PHONY: generate
-generate:
-	@true
-
-.PHONY: app
-app: generate-app
-
-.PHONY: generate-app
-generate-app:
-	@echo "$(BLUE)Generating Wall app entry...$(NC)"
-	$(GO) run ./tools/generate-app --app "$(APP)" --link "$(LINK)" --creator "$(CREATOR)" --platform "$(PLATFORM)"
-
-# Update Wall of Apps docs snippet
-.PHONY: update-wall-of-apps
-update-wall-of-apps:
-	@echo "$(BLUE)Updating Wall of Apps snippets...$(NC)"
-	$(GO) run ./tools/update-wall-of-apps
-
 # Generate docs/COMMANDS.md from live CLI help
 .PHONY: generate-command-docs
 generate-command-docs:
@@ -187,6 +168,11 @@ check-command-docs:
 	@echo "$(BLUE)Checking command docs sync...$(NC)"
 	python3 ./scripts/generate-command-docs.py --check
 	python3 ./scripts/check-commands-docs.py
+
+.PHONY: check-wall-of-apps
+check-wall-of-apps:
+	@echo "$(BLUE)Checking Wall of Apps source...$(NC)"
+	$(GO) test ./internal/cli/apps -run TestCommunityWallSourceFileIsCanonical -count=1
 
 # Run focused performance benchmark snapshot
 .PHONY: bench-perf
@@ -263,9 +249,6 @@ help:
 	@echo "  deps           Install dependencies"
 	@echo "  update-deps    Update dependencies"
 	@echo "  update-openapi Update OpenAPI paths index"
-	@echo "  generate app   Generate/update Wall app entry in JSON + README"
-	@echo "                 Usage: make generate app APP=\"Name\" LINK=\"https://...\" CREATOR=\"you\" PLATFORM=\"iOS,macOS\""
-	@echo "  update-wall-of-apps Update Wall of Apps snippets"
 	@echo "  generate-command-docs Generate docs/COMMANDS.md from live CLI help"
 	@echo "  check-command-docs Validate docs command lists against live CLI help"
 	@echo "  bench-perf     Run focused perf benchmark snapshot"
