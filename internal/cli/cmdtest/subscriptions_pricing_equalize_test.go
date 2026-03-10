@@ -118,6 +118,61 @@ func TestSubscriptionsPricingEqualize_DryRunMatchesBasePriceNumerically(t *testi
 	}
 }
 
+func TestSubscriptionsPricingEqualize_DryRunUsesTerritoryRelationshipForOpaquePricePointIDs(t *testing.T) {
+	setupAuth(t)
+
+	originalTransport := http.DefaultTransport
+	t.Cleanup(func() {
+		http.DefaultTransport = originalTransport
+	})
+
+	basePricePointID := testSubscriptionPricePointID("USA")
+
+	http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.Method == http.MethodGet && req.URL.Path == "/v1/subscriptions/sub-1/pricePoints":
+			body := `{"data":[{"type":"subscriptionPricePoints","id":"` + basePricePointID + `","attributes":{"customerPrice":"3.50"}}],"links":{}}`
+			return jsonHTTPResponse(http.StatusOK, body), nil
+		case req.Method == http.MethodGet && req.URL.Path == "/v1/subscriptionPricePoints/"+basePricePointID+"/equalizations":
+			body := `{"data":[{"type":"subscriptionPricePoints","id":"opaque-eq-1","attributes":{"customerPrice":"4.49"},"relationships":{"territory":{"data":{"type":"territories","id":"CAN"}}}}],"links":{}}`
+			return jsonHTTPResponse(http.StatusOK, body), nil
+		default:
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.String())
+			return nil, nil
+		}
+	})
+
+	root := RootCommand("1.2.3")
+	root.FlagSet.SetOutput(io.Discard)
+
+	stdout, _ := captureOutput(t, func() {
+		if err := root.Parse([]string{
+			"subscriptions", "pricing", "equalize",
+			"--subscription-id", "sub-1",
+			"--base-price", "3.5",
+			"--dry-run",
+		}); err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		if err := root.Run(context.Background()); err != nil {
+			t.Fatalf("run error: %v", err)
+		}
+	})
+
+	var result struct {
+		Territories []struct {
+			Territory string `json:"territory"`
+			Price     string `json:"price"`
+		} `json:"territories"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("parse JSON result: %v", err)
+	}
+	if len(result.Territories) != 2 || result.Territories[1].Territory != "CAN" {
+		t.Fatalf("expected CAN territory from relationships, got %+v", result.Territories)
+	}
+}
+
 func TestSubscriptionsPricingEqualize_InitialPriceUsesPatchThenCreatesRemainingTerritories(t *testing.T) {
 	setupAuth(t)
 
@@ -129,6 +184,7 @@ func TestSubscriptionsPricingEqualize_InitialPriceUsesPatchThenCreatesRemainingT
 	basePricePointID := testSubscriptionPricePointID("USA")
 	canPricePointID := testSubscriptionPricePointID("CAN")
 
+	steps := make([]string, 0, 3)
 	patchCount := 0
 	postCount := 0
 
@@ -140,12 +196,26 @@ func TestSubscriptionsPricingEqualize_InitialPriceUsesPatchThenCreatesRemainingT
 		case req.Method == http.MethodGet && req.URL.Path == "/v1/subscriptionPricePoints/"+basePricePointID+"/equalizations":
 			body := `{"data":[{"type":"subscriptionPricePoints","id":"` + canPricePointID + `","attributes":{"customerPrice":"1.29"}}],"links":{}}`
 			return jsonHTTPResponse(http.StatusOK, body), nil
+		case req.Method == http.MethodGet && req.URL.Path == "/v1/subscriptions/sub-1/subscriptionAvailability":
+			return jsonHTTPResponse(http.StatusNotFound, `{"errors":[{"status":"404","code":"NOT_FOUND","title":"not found","detail":"missing"}]}`), nil
+		case req.Method == http.MethodPost && req.URL.Path == "/v1/subscriptionAvailabilities":
+			steps = append(steps, "availability")
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				t.Fatalf("ReadAll() error: %v", err)
+			}
+			if !strings.Contains(string(body), `"id":"USA"`) || !strings.Contains(string(body), `"id":"CAN"`) {
+				t.Fatalf("expected USA and CAN availability in request body, got %s", string(body))
+			}
+			return jsonHTTPResponse(http.StatusCreated, `{"data":{"type":"subscriptionAvailabilities","id":"avail-1","attributes":{"availableInNewTerritories":false}}}`), nil
 		case req.Method == http.MethodGet && req.URL.Path == "/v1/subscriptions/sub-1/relationships/prices":
 			return jsonHTTPResponse(http.StatusOK, `{"data":[],"links":{}}`), nil
 		case req.Method == http.MethodPatch && req.URL.Path == "/v1/subscriptions/sub-1":
+			steps = append(steps, "patch")
 			patchCount++
 			return jsonHTTPResponse(http.StatusOK, `{"data":{"type":"subscriptions","id":"sub-1"}}`), nil
 		case req.Method == http.MethodPost && req.URL.Path == "/v1/subscriptionPrices":
+			steps = append(steps, "price")
 			postCount++
 			body, err := io.ReadAll(req.Body)
 			if err != nil {
@@ -184,6 +254,9 @@ func TestSubscriptionsPricingEqualize_InitialPriceUsesPatchThenCreatesRemainingT
 	if postCount != 1 {
 		t.Fatalf("expected one follow-up POST, got %d", postCount)
 	}
+	if strings.Join(steps, ",") != "availability,patch,price" {
+		t.Fatalf("expected availability sync before pricing, got %v", steps)
+	}
 
 	var result struct {
 		Total     int `json:"total"`
@@ -217,6 +290,17 @@ func TestSubscriptionsPricingEqualize_ReturnsReportedErrorWhenAnyTerritoryFails(
 		case req.Method == http.MethodGet && req.URL.Path == "/v1/subscriptionPricePoints/"+basePricePointID+"/equalizations":
 			body := `{"data":[{"type":"subscriptionPricePoints","id":"` + canPricePointID + `","attributes":{"customerPrice":"1.29"}}],"links":{}}`
 			return jsonHTTPResponse(http.StatusOK, body), nil
+		case req.Method == http.MethodGet && req.URL.Path == "/v1/subscriptions/sub-1/subscriptionAvailability":
+			return jsonHTTPResponse(http.StatusOK, `{"data":{"type":"subscriptionAvailabilities","id":"avail-1","attributes":{"availableInNewTerritories":true}}}`), nil
+		case req.Method == http.MethodPost && req.URL.Path == "/v1/subscriptionAvailabilities":
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				t.Fatalf("ReadAll() error: %v", err)
+			}
+			if !strings.Contains(string(body), `"availableInNewTerritories":true`) {
+				t.Fatalf("expected availability payload to preserve availableInNewTerritories, got %s", string(body))
+			}
+			return jsonHTTPResponse(http.StatusCreated, `{"data":{"type":"subscriptionAvailabilities","id":"avail-1","attributes":{"availableInNewTerritories":true}}}`), nil
 		case req.Method == http.MethodGet && req.URL.Path == "/v1/subscriptions/sub-1/relationships/prices":
 			return jsonHTTPResponse(http.StatusOK, `{"data":[{"type":"subscriptionPrices","id":"price-existing"}],"links":{}}`), nil
 		case req.Method == http.MethodPost && req.URL.Path == "/v1/subscriptionPrices":

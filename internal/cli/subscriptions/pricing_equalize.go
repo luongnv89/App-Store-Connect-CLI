@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -122,6 +123,14 @@ Examples:
 					Territories:    allTerritories,
 					Total:          len(allTerritories),
 				}, *output.Output, *output.Pretty)
+			}
+
+			territoryIDs := make([]string, 0, len(allTerritories))
+			for _, eq := range allTerritories {
+				territoryIDs = append(territoryIDs, eq.Territory)
+			}
+			if err := syncEqualizeAvailability(ctx, client, subID, territoryIDs); err != nil {
+				return fmt.Errorf("equalize: %w", err)
 			}
 
 			// Step 3: Set prices for all territories concurrently
@@ -331,8 +340,11 @@ func fetchEqualizations(ctx context.Context, client *asc.Client, pricePointID, b
 
 	var result []equalization
 	for _, pp := range typed.Data {
-		territory := decodePricePointTerritory(pp.ID)
-		if territory == "" || strings.EqualFold(territory, baseTerritory) {
+		territory, err := equalizationTerritoryID(pp)
+		if err != nil {
+			return nil, err
+		}
+		if strings.EqualFold(territory, baseTerritory) {
 			continue
 		}
 		result = append(result, equalization{
@@ -343,6 +355,71 @@ func fetchEqualizations(ctx context.Context, client *asc.Client, pricePointID, b
 	}
 
 	return result, nil
+}
+
+func syncEqualizeAvailability(ctx context.Context, client *asc.Client, subID string, territoryIDs []string) error {
+	if len(territoryIDs) == 0 {
+		return nil
+	}
+
+	attrs := asc.SubscriptionAvailabilityAttributes{}
+
+	getCtx, getCancel := shared.ContextWithTimeout(ctx)
+	availability, err := client.GetSubscriptionAvailabilityForSubscription(getCtx, subID)
+	getCancel()
+	switch {
+	case err == nil:
+		attrs = availability.Data.Attributes
+	case isEqualizeAvailabilityMissing(err):
+	default:
+		return fmt.Errorf("failed to fetch availability: %w", err)
+	}
+
+	setCtx, setCancel := shared.ContextWithTimeout(ctx)
+	defer setCancel()
+
+	if _, err := client.CreateSubscriptionAvailability(setCtx, subID, territoryIDs, attrs); err != nil {
+		return fmt.Errorf("failed to sync availability: %w", err)
+	}
+	return nil
+}
+
+func isEqualizeAvailabilityMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, asc.ErrNotFound) {
+		return true
+	}
+	apiErr, ok := errors.AsType[*asc.APIError](err)
+	return ok && apiErr != nil && apiErr.StatusCode == http.StatusNotFound
+}
+
+func equalizationTerritoryID(pricePoint asc.Resource[asc.SubscriptionPricePointAttributes]) (string, error) {
+	if territory := territoryFromPricePointRelationships(pricePoint.Relationships); territory != "" {
+		return territory, nil
+	}
+	if territory := decodePricePointTerritory(pricePoint.ID); territory != "" {
+		return territory, nil
+	}
+	return "", fmt.Errorf("failed to resolve territory for equalized price point %q", pricePoint.ID)
+}
+
+func territoryFromPricePointRelationships(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+
+	var relationships struct {
+		Territory *asc.Relationship `json:"territory"`
+	}
+	if err := json.Unmarshal(raw, &relationships); err != nil {
+		return ""
+	}
+	if relationships.Territory == nil {
+		return ""
+	}
+	return strings.ToUpper(strings.TrimSpace(relationships.Territory.Data.ID))
 }
 
 func decodePricePointTerritory(id string) string {
