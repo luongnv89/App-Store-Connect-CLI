@@ -169,6 +169,11 @@ check-command-docs:
 	python3 ./scripts/generate-command-docs.py --check
 	python3 ./scripts/check-commands-docs.py
 
+.PHONY: check-wall-of-apps
+check-wall-of-apps:
+	@echo "$(BLUE)Checking Wall of Apps source...$(NC)"
+	$(GO) test ./internal/cli/apps -run TestCommunityWallSourceFileIsCanonical -count=1
+
 # Run focused performance benchmark snapshot
 .PHONY: bench-perf
 bench-perf:

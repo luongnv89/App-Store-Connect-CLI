@@ -704,16 +704,9 @@ func communityWallSlug(value string) string {
 }
 
 func parseCommunityWallSourceEntries(raw []byte, source string) ([]communityWallEntry, error) {
-	if strings.TrimSpace(string(raw)) == "" {
-		return nil, fmt.Errorf("community wall source %q is empty", source)
-	}
-
-	var entries []communityWallEntry
-	if err := json.Unmarshal(raw, &entries); err != nil {
-		return nil, fmt.Errorf("invalid community wall source %q: %w", source, err)
-	}
-	if len(entries) == 0 {
-		return nil, fmt.Errorf("community wall source %q has no entries", source)
+	entries, err := decodeCommunityWallEntries(raw, source)
+	if err != nil {
+		return nil, err
 	}
 
 	normalized := make([]communityWallEntry, 0, len(entries))
