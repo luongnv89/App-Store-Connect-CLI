@@ -300,8 +300,9 @@ func TestFlightGroupsCommand() *ffcli.Command {
 			"beta-groups":               "groups",
 			"beta-recruitment-criteria": "recruitment",
 			"beta-recruitment-criterion-compatible-build-check": "compatibility",
-			"get":    "view",
-			"update": "edit",
+			"relationships": "links",
+			"get":           "view",
+			"update":        "edit",
 		},
 		[]textReplacement{
 			{old: "Manage TestFlight beta groups.", new: "Manage TestFlight groups."},
@@ -328,9 +329,7 @@ func TestFlightGroupsCommand() *ffcli.Command {
 		},
 	)
 	setUsageFuncRecursively(cmd, testflightVisibleUsageFunc)
-	if relationshipsCmd := findSubcommand(cmd, "relationships"); relationshipsCmd != nil {
-		hideTestFlightCommand(relationshipsCmd)
-	}
+	cmd.Subcommands = append(cmd.Subcommands, deprecatedTestFlightGroupsRelationshipsAliasCommand())
 	if compatibilityCmd := findSubcommand(cmd, "compatibility"); compatibilityCmd != nil {
 		compatibilityCmd.ShortHelp = "Check recruitment compatibility for a group."
 		compatibilityCmd.LongHelp = `Check recruitment compatibility for a group.
@@ -354,9 +353,10 @@ func TestFlightTestersCommand() *ffcli.Command {
 		"asc testflight beta-testers",
 		"asc testflight testers",
 		map[string]string{
-			"beta-testers": "testers",
-			"beta-groups":  "groups",
-			"get":          "view",
+			"beta-testers":  "testers",
+			"beta-groups":   "groups",
+			"relationships": "links",
+			"get":           "view",
 		},
 		[]textReplacement{
 			{old: "Manage TestFlight beta testers.", new: "Manage TestFlight testers."},
@@ -375,10 +375,68 @@ func TestFlightTestersCommand() *ffcli.Command {
 		},
 	)
 	setUsageFuncRecursively(cmd, testflightVisibleUsageFunc)
-	if relationshipsCmd := findSubcommand(cmd, "relationships"); relationshipsCmd != nil {
-		hideTestFlightCommand(relationshipsCmd)
-	}
+	cmd.Subcommands = append(cmd.Subcommands, deprecatedTestFlightTestersRelationshipsAliasCommand())
 	return cmd
+}
+
+func deprecatedTestFlightGroupsRelationshipsAliasCommand() *ffcli.Command {
+	cmd := BetaGroupsRelationshipsCommand()
+	if cmd == nil {
+		return nil
+	}
+
+	cmd.ShortUsage = "asc testflight groups links <subcommand> [flags]"
+	cmd.ShortHelp = "DEPRECATED: use `asc testflight groups links ...`."
+	cmd.LongHelp = "Deprecated compatibility alias for `asc testflight groups links ...`."
+	cmd.UsageFunc = shared.DeprecatedUsageFunc
+
+	if viewCmd := shared.DeprecatedAliasLeafCommand(
+		rewriteCommandTree(
+			BetaGroupsRelationshipsGetCommand(),
+			"asc testflight beta-groups relationships get",
+			"asc testflight groups links view",
+			map[string]string{"get": "view"},
+			nil,
+		),
+		"view",
+		"asc testflight groups links view --group-id \"GROUP_ID\" --type \"RELATIONSHIP\" [flags]",
+		"asc testflight groups links view",
+		"Warning: `asc testflight groups relationships view` is deprecated. Use `asc testflight groups links view`.",
+	); viewCmd != nil {
+		cmd.Subcommands = []*ffcli.Command{viewCmd}
+	}
+
+	return hideTestFlightCommand(cmd)
+}
+
+func deprecatedTestFlightTestersRelationshipsAliasCommand() *ffcli.Command {
+	cmd := BetaTestersRelationshipsCommand()
+	if cmd == nil {
+		return nil
+	}
+
+	cmd.ShortUsage = "asc testflight testers links <subcommand> [flags]"
+	cmd.ShortHelp = "DEPRECATED: use `asc testflight testers links ...`."
+	cmd.LongHelp = "Deprecated compatibility alias for `asc testflight testers links ...`."
+	cmd.UsageFunc = shared.DeprecatedUsageFunc
+
+	if viewCmd := shared.DeprecatedAliasLeafCommand(
+		rewriteCommandTree(
+			BetaTestersRelationshipsGetCommand(),
+			"asc testflight beta-testers relationships get",
+			"asc testflight testers links view",
+			map[string]string{"get": "view"},
+			nil,
+		),
+		"view",
+		"asc testflight testers links view --tester-id \"TESTER_ID\" --type \"RELATIONSHIP\" [flags]",
+		"asc testflight testers links view",
+		"Warning: `asc testflight testers relationships view` is deprecated. Use `asc testflight testers links view`.",
+	); viewCmd != nil {
+		cmd.Subcommands = []*ffcli.Command{viewCmd}
+	}
+
+	return hideTestFlightCommand(cmd)
 }
 
 func TestFlightAgreementsCommand() *ffcli.Command {

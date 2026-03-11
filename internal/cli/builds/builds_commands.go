@@ -397,10 +397,10 @@ Examples:
   asc builds icons list --build "BUILD_ID"
   asc builds beta-app-review-submission get --build "BUILD_ID"
   asc builds build-beta-detail get --build "BUILD_ID"
-  asc builds relationships get --build "BUILD_ID" --type "app"
+  asc builds links view --build "BUILD_ID" --type "app"
   asc builds metrics beta-usages --build "BUILD_ID"`,
 		FlagSet:   fs,
-		UsageFunc: shared.DefaultUsageFunc,
+		UsageFunc: buildsVisibleUsageFunc,
 		Subcommands: []*ffcli.Command{
 			listCmd,
 			BuildsLatestCommand(),
@@ -422,6 +422,7 @@ Examples:
 			BuildsBetaAppReviewSubmissionCommand(),
 			BuildsBuildBetaDetailCommand(),
 			BuildsRelationshipsCommand(),
+			deprecatedBuildsRelationshipsAliasCommand(),
 			BuildsMetricsCommand(),
 		},
 		Exec: func(ctx context.Context, args []string) error {

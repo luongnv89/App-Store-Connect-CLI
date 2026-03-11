@@ -51,23 +51,23 @@ func TestBuildsParityValidationErrors(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "builds relationships missing type",
-			args:    []string{"builds", "relationships", "get", "--build", "BUILD_ID"},
+			name:    "builds links missing type",
+			args:    []string{"builds", "links", "view", "--build", "BUILD_ID"},
 			wantErr: "--type is required",
 		},
 		{
-			name:    "builds relationships missing build",
-			args:    []string{"builds", "relationships", "get", "--type", "app"},
+			name:    "builds links missing build",
+			args:    []string{"builds", "links", "view", "--type", "app"},
 			wantErr: "--build is required",
 		},
 		{
-			name:    "builds relationships invalid type",
-			args:    []string{"builds", "relationships", "get", "--build", "BUILD_ID", "--type", "nope"},
+			name:    "builds links invalid type",
+			args:    []string{"builds", "links", "view", "--build", "BUILD_ID", "--type", "nope"},
 			wantErr: "--type must be one of",
 		},
 		{
-			name:    "builds relationships invalid limit for single",
-			args:    []string{"builds", "relationships", "get", "--build", "BUILD_ID", "--type", "app", "--limit", "10"},
+			name:    "builds links invalid limit for single",
+			args:    []string{"builds", "links", "view", "--build", "BUILD_ID", "--type", "app", "--limit", "10"},
 			wantErr: "only valid for to-many relationships",
 		},
 		{
@@ -253,32 +253,32 @@ func TestTestFlightRelationshipsValidationErrors(t *testing.T) {
 	}{
 		{
 			name:    "beta-groups relationships missing type",
-			args:    []string{"testflight", "beta-groups", "relationships", "get", "--group-id", "GROUP_ID"},
+			args:    []string{"testflight", "groups", "links", "view", "--group-id", "GROUP_ID"},
 			wantErr: "--type is required",
 		},
 		{
 			name:    "beta-groups relationships missing group-id",
-			args:    []string{"testflight", "beta-groups", "relationships", "get", "--type", "betaTesters"},
+			args:    []string{"testflight", "groups", "links", "view", "--type", "betaTesters"},
 			wantErr: "--group-id is required",
 		},
 		{
 			name:    "beta-groups relationships invalid type",
-			args:    []string{"testflight", "beta-groups", "relationships", "get", "--group-id", "GROUP_ID", "--type", "nope"},
+			args:    []string{"testflight", "groups", "links", "view", "--group-id", "GROUP_ID", "--type", "nope"},
 			wantErr: "--type must be one of",
 		},
 		{
 			name:    "beta-testers relationships missing type",
-			args:    []string{"testflight", "beta-testers", "relationships", "get", "--tester-id", "TESTER_ID"},
+			args:    []string{"testflight", "testers", "links", "view", "--tester-id", "TESTER_ID"},
 			wantErr: "--type is required",
 		},
 		{
 			name:    "beta-testers relationships missing tester-id",
-			args:    []string{"testflight", "beta-testers", "relationships", "get", "--type", "apps"},
+			args:    []string{"testflight", "testers", "links", "view", "--type", "apps"},
 			wantErr: "--tester-id is required",
 		},
 		{
 			name:    "beta-testers relationships invalid type",
-			args:    []string{"testflight", "beta-testers", "relationships", "get", "--tester-id", "TESTER_ID", "--type", "nope"},
+			args:    []string{"testflight", "testers", "links", "view", "--tester-id", "TESTER_ID", "--type", "nope"},
 			wantErr: "--type must be one of",
 		},
 		{

@@ -4233,13 +4233,13 @@ func TestAppTagsValidationErrors(t *testing.T) {
 			wantErr: "Error: --id is required",
 		},
 		{
-			name:    "app-tags territories-relationships missing id",
-			args:    []string{"app-tags", "territories-relationships"},
+			name:    "app-tags territories-links missing id",
+			args:    []string{"app-tags", "territories-links"},
 			wantErr: "Error: --id is required",
 		},
 		{
-			name:    "app-tags relationships missing app",
-			args:    []string{"app-tags", "relationships"},
+			name:    "app-tags links missing app",
+			args:    []string{"app-tags", "links"},
 			wantErr: "Error: --app is required",
 		},
 	}
@@ -4324,12 +4324,12 @@ func TestAppClipsValidationErrors(t *testing.T) {
 		},
 		{
 			name:    "default experiences relationships review detail missing experience-id",
-			args:    []string{"app-clips", "default-experiences", "relationships", "app-store-review-detail"},
+			args:    []string{"app-clips", "default-experiences", "links", "app-store-review-detail"},
 			wantErr: "Error: --experience-id is required",
 		},
 		{
 			name:    "default experiences relationships release version missing experience-id",
-			args:    []string{"app-clips", "default-experiences", "relationships", "release-with-app-store-version"},
+			args:    []string{"app-clips", "default-experiences", "links", "release-with-app-store-version"},
 			wantErr: "Error: --experience-id is required",
 		},
 		{
@@ -4349,12 +4349,12 @@ func TestAppClipsValidationErrors(t *testing.T) {
 		},
 		{
 			name:    "default experiences relationships missing app clip",
-			args:    []string{"app-clips", "default-experiences-relationships"},
+			args:    []string{"app-clips", "default-experiences-links"},
 			wantErr: "Error: --app-clip-id is required",
 		},
 		{
 			name:    "advanced experiences relationships missing app clip",
-			args:    []string{"app-clips", "advanced-experiences-relationships"},
+			args:    []string{"app-clips", "advanced-experiences-links"},
 			wantErr: "Error: --app-clip-id is required",
 		},
 		{
