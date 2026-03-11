@@ -194,6 +194,15 @@ func TestDeprecatedHelpShowsCanonicalPathsOnly(t *testing.T) {
 			},
 		},
 		{
+			name:        "pre-release relationships alias help",
+			args:        []string{"testflight", "pre-release", "relationships"},
+			wantUsage:   "asc testflight pre-release links <subcommand> [flags]",
+			wantWarning: "",
+			wantNotShown: []string{
+				"asc testflight pre-release relationships <subcommand> [flags]",
+			},
+		},
+		{
 			name:        "sync alias help",
 			args:        []string{"testflight", "sync"},
 			wantUsage:   "asc testflight config export [flags]",
@@ -1380,10 +1389,13 @@ func TestTestFlightPreReleaseHelpShowsCanonicalVerbs(t *testing.T) {
 	if stdout != "" {
 		t.Fatalf("expected empty stdout, got %q", stdout)
 	}
-	for _, want := range []string{"list", "view", "app", "builds", "relationships"} {
+	for _, want := range []string{"list", "view", "app", "builds", "links"} {
 		if !strings.Contains(stderr, want) {
 			t.Fatalf("expected pre-release help to contain %q, got %q", want, stderr)
 		}
+	}
+	if strings.Contains(stderr, "relationships") {
+		t.Fatalf("expected pre-release help to hide deprecated relationships alias, got %q", stderr)
 	}
 }
 
@@ -1438,7 +1450,7 @@ func TestRemovedPreReleaseVersionsCommandsShowMigrationGuidance(t *testing.T) {
 		{
 			name:    "relationships view command",
 			args:    []string{"pre-release-versions", "relationships", "get", "--id", "PR_ID", "--type", "app"},
-			wantErr: "Error: `asc pre-release-versions relationships get` was removed. Use `asc testflight pre-release relationships view` instead.",
+			wantErr: "Error: `asc pre-release-versions relationships get` was removed. Use `asc testflight pre-release links view` instead.",
 		},
 	}
 
@@ -1466,4 +1478,46 @@ func TestRemovedPreReleaseVersionsCommandsShowMigrationGuidance(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLegacyPreReleaseRelationshipsAliasWarnsAndDelegates(t *testing.T) {
+	setupAuth(t)
+	t.Setenv("ASC_CONFIG_PATH", filepath.Join(t.TempDir(), "nonexistent.json"))
+
+	originalTransport := http.DefaultTransport
+	t.Cleanup(func() {
+		http.DefaultTransport = originalTransport
+	})
+
+	http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Method != http.MethodGet {
+			t.Fatalf("expected GET, got %s", req.Method)
+		}
+		if req.URL.Path != "/v1/preReleaseVersions/pr-1/relationships/app" {
+			t.Fatalf("expected path /v1/preReleaseVersions/pr-1/relationships/app, got %s", req.URL.Path)
+		}
+		body := `{"data":{"type":"apps","id":"app-1"}}`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+		}, nil
+	})
+
+	root := RootCommand("1.2.3")
+	root.FlagSet.SetOutput(io.Discard)
+
+	stdout, stderr := captureOutput(t, func() {
+		if err := root.Parse([]string{"testflight", "pre-release", "relationships", "view", "--id", "pr-1", "--type", "app"}); err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		if err := root.Run(context.Background()); err != nil {
+			t.Fatalf("run error: %v", err)
+		}
+	})
+
+	if !strings.Contains(stdout, `"id":"app-1"`) {
+		t.Fatalf("expected delegated output, got %q", stdout)
+	}
+	requireStderrContainsWarning(t, stderr, preReleaseLinksDeprecationWarning)
 }

@@ -725,6 +725,53 @@ func DeprecatedBetaNotificationsAliasCommand() *ffcli.Command {
 	return cmd
 }
 
+const preReleaseLinksCanonicalRoot = "asc testflight pre-release links"
+
+func testFlightPreReleaseLinksCommand() *ffcli.Command {
+	return rewriteCommandTree(
+		prerelease.PreReleaseVersionsRelationshipsCommand(),
+		"asc pre-release-versions relationships",
+		preReleaseLinksCanonicalRoot,
+		map[string]string{
+			"relationships": "links",
+			"get":           "view",
+		},
+		[]textReplacement{
+			{old: "pre-release-versions relationships get", new: "testflight pre-release links view"},
+			{old: "Get ", new: "View "},
+			{old: "get: ", new: "view: "},
+			{old: "get ", new: "view "},
+		},
+	)
+}
+
+func deprecatedPreReleaseRelationshipsAliasCommand() *ffcli.Command {
+	cmd := testFlightPreReleaseLinksCommand()
+	if cmd == nil {
+		return nil
+	}
+
+	cmd.Name = "relationships"
+	cmd.ShortUsage = preReleaseLinksCanonicalRoot + " <subcommand> [flags]"
+	cmd.ShortHelp = "DEPRECATED: use `asc testflight pre-release links ...`."
+	cmd.LongHelp = "Deprecated compatibility alias for `asc testflight pre-release links ...`."
+	cmd.UsageFunc = shared.DeprecatedUsageFunc
+
+	if viewCmd := findSubcommand(cmd, "view"); viewCmd != nil {
+		viewCmd.ShortUsage = preReleaseLinksCanonicalRoot + " view --id \"PR_ID\" --type \"RELATIONSHIP\" [flags]"
+		viewCmd.ShortHelp = "Compatibility alias: use `asc testflight pre-release links view`."
+		viewCmd.LongHelp = "Compatibility alias: use `asc testflight pre-release links view --id \"PR_ID\" --type \"RELATIONSHIP\" [flags]`."
+		viewCmd.UsageFunc = shared.DeprecatedUsageFunc
+		origExec := viewCmd.Exec
+		viewCmd.Exec = func(ctx context.Context, args []string) error {
+			fmt.Fprintln(os.Stderr, "Warning: `asc testflight pre-release relationships view` is deprecated. Use `asc testflight pre-release links view`.")
+			return origExec(ctx, args)
+		}
+	}
+
+	return hideTestFlightCommand(cmd)
+}
+
 func TestFlightAppLocalizationsCommand() *ffcli.Command {
 	cmd := rewriteCommandTree(
 		betaapplocalizations.BetaAppLocalizationsCommand(),
@@ -768,10 +815,12 @@ func TestFlightPreReleaseCommand() *ffcli.Command {
 		"asc testflight pre-release",
 		map[string]string{
 			"pre-release-versions": "pre-release",
+			"relationships":        "links",
 			"get":                  "view",
 		},
 		[]textReplacement{
 			{old: "pre-release-versions ", new: "testflight pre-release "},
+			{old: "pre-release-versions relationships get", new: "testflight pre-release links view"},
 			{old: "Manage TestFlight pre-release versions.", new: "Manage pre-release versions."},
 			{old: "List TestFlight pre-release versions", new: "List pre-release versions"},
 			{old: "Get a TestFlight pre-release version", new: "View a pre-release version"},
@@ -790,8 +839,9 @@ Examples:
   asc testflight pre-release view --id "PR_ID"
   asc testflight pre-release app view --id "PR_ID"
   asc testflight pre-release builds list --id "PR_ID"
-  asc testflight pre-release relationships view --id "PR_ID" --type "app"`
+  asc testflight pre-release links view --id "PR_ID" --type "app"`
 	setUsageFuncRecursively(cmd, testflightVisibleUsageFunc)
+	cmd.Subcommands = append(cmd.Subcommands, deprecatedPreReleaseRelationshipsAliasCommand())
 	return cmd
 }
 

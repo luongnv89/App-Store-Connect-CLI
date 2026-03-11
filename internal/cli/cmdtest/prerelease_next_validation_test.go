@@ -237,12 +237,12 @@ func TestPreReleaseVersionsRelationshipsBuildsRejectsInvalidNextURL(t *testing.T
 		{
 			name:    "invalid scheme",
 			next:    "http://api.appstoreconnect.apple.com/v1/preReleaseVersions/pr-1/relationships/builds?cursor=AQ",
-			wantErr: "testflight pre-release relationships view: --next must be an App Store Connect URL",
+			wantErr: "testflight pre-release links view: --next must be an App Store Connect URL",
 		},
 		{
 			name:    "malformed URL",
 			next:    "https://api.appstoreconnect.apple.com/%zz",
-			wantErr: "testflight pre-release relationships view: --next must be a valid URL:",
+			wantErr: "testflight pre-release links view: --next must be a valid URL:",
 		},
 	}
 
@@ -253,7 +253,7 @@ func TestPreReleaseVersionsRelationshipsBuildsRejectsInvalidNextURL(t *testing.T
 
 			var runErr error
 			stdout, stderr := captureOutput(t, func() {
-				if err := root.Parse([]string{"testflight", "pre-release", "relationships", "view", "--type", "builds", "--next", test.next}); err != nil {
+				if err := root.Parse([]string{"testflight", "pre-release", "links", "view", "--type", "builds", "--next", test.next}); err != nil {
 					t.Fatalf("parse error: %v", err)
 				}
 				runErr = root.Run(context.Background())
@@ -321,7 +321,7 @@ func TestPreReleaseVersionsRelationshipsBuildsPaginateFromNextWithoutID(t *testi
 	root.FlagSet.SetOutput(io.Discard)
 
 	stdout, stderr := captureOutput(t, func() {
-		if err := root.Parse([]string{"testflight", "pre-release", "relationships", "view", "--type", "builds", "--paginate", "--next", firstURL}); err != nil {
+		if err := root.Parse([]string{"testflight", "pre-release", "links", "view", "--type", "builds", "--paginate", "--next", firstURL}); err != nil {
 			t.Fatalf("parse error: %v", err)
 		}
 		if err := root.Run(context.Background()); err != nil {

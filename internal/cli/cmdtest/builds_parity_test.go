@@ -315,23 +315,23 @@ func TestPreReleaseRelationshipsValidationErrors(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "pre-release relationships missing type",
-			args:    []string{"testflight", "pre-release", "relationships", "view", "--id", "PR_ID"},
+			name:    "pre-release links missing type",
+			args:    []string{"testflight", "pre-release", "links", "view", "--id", "PR_ID"},
 			wantErr: "--type is required",
 		},
 		{
-			name:    "pre-release relationships missing id",
-			args:    []string{"testflight", "pre-release", "relationships", "view", "--type", "app"},
+			name:    "pre-release links missing id",
+			args:    []string{"testflight", "pre-release", "links", "view", "--type", "app"},
 			wantErr: "--id is required",
 		},
 		{
-			name:    "pre-release relationships invalid type",
-			args:    []string{"testflight", "pre-release", "relationships", "view", "--id", "PR_ID", "--type", "nope"},
+			name:    "pre-release links invalid type",
+			args:    []string{"testflight", "pre-release", "links", "view", "--id", "PR_ID", "--type", "nope"},
 			wantErr: "--type must be one of",
 		},
 		{
-			name:    "pre-release relationships invalid limit for single",
-			args:    []string{"testflight", "pre-release", "relationships", "view", "--id", "PR_ID", "--type", "app", "--limit", "10"},
+			name:    "pre-release links invalid limit for single",
+			args:    []string{"testflight", "pre-release", "links", "view", "--id", "PR_ID", "--type", "app", "--limit", "10"},
 			wantErr: "only valid for to-many relationships",
 		},
 	}

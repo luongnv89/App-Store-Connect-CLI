@@ -21,6 +21,7 @@ func RemovedPreReleaseVersionsCommand() *ffcli.Command {
 		"asc testflight pre-release",
 		map[string]string{
 			"pre-release-versions": "pre-release",
+			"relationships":        "links",
 			"get":                  "view",
 		},
 	)
