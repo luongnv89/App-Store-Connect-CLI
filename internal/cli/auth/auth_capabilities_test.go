@@ -183,6 +183,48 @@ func TestCollectAuthCapabilities_SkipsMissingScopes(t *testing.T) {
 	}
 }
 
+func TestCollectAuthCapabilities_MapsDeniedAndUnauthorized(t *testing.T) {
+	prevClientFn := authCapabilitiesClientFn
+	authCapabilitiesClientFn = func() (authCapabilitiesClient, error) {
+		return &authCapabilitiesClientStub{
+			getAppsErr:    asc.ErrForbidden,
+			getBuildsErr:  asc.ErrForbidden,
+			getReviewsErr: asc.ErrUnauthorized,
+		}, nil
+	}
+	t.Cleanup(func() {
+		authCapabilitiesClientFn = prevClientFn
+	})
+
+	resp, err := collectAuthCapabilities(context.Background(), "123456789", "")
+	if err != nil {
+		t.Fatalf("collectAuthCapabilities() error: %v", err)
+	}
+	if resp.Capabilities[0].Status != "unavailable" {
+		t.Fatalf("apps status = %q, want unavailable", resp.Capabilities[0].Status)
+	}
+	if resp.Capabilities[1].Status != "unavailable" {
+		t.Fatalf("builds status = %q, want unavailable", resp.Capabilities[1].Status)
+	}
+	if resp.Capabilities[2].Status != "inconclusive" || !strings.Contains(resp.Capabilities[2].Message, "unauthorized or expired") {
+		t.Fatalf("unexpected reviews check: %+v", resp.Capabilities[2])
+	}
+}
+
+func TestAuthCapabilityCheckFromErrorNotFound(t *testing.T) {
+	check := authCapabilityCheckFromError(
+		"analytics",
+		"app",
+		asc.ErrNotFound,
+		"ok",
+		"denied",
+		"analytics probe failed",
+	)
+	if check.Status != "inconclusive" || !strings.Contains(check.Message, "not found or is not visible") {
+		t.Fatalf("unexpected check: %+v", check)
+	}
+}
+
 type authCapabilitiesClientStub struct {
 	getAppsErr               error
 	getBuildsErr             error
