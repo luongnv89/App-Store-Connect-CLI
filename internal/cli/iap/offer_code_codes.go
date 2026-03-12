@@ -396,6 +396,7 @@ func IAPOfferCodesOneTimeCodesCreateCommand() *ffcli.Command {
 	offerCodeID := fs.String("offer-code-id", "", "Offer code ID (required)")
 	quantity := fs.Int("quantity", 0, "Number of codes to generate (required, positive integer)")
 	expirationDate := fs.String("expiration-date", "", "Expiration date (YYYY-MM-DD) (required)")
+	environment := fs.String("environment", "", "Offer code environment")
 	output := shared.BindOutputFlags(fs)
 
 	return &ffcli.Command{
@@ -438,10 +439,11 @@ Examples:
 			req := asc.InAppPurchaseOfferCodeOneTimeUseCodeCreateRequest{
 				Data: asc.InAppPurchaseOfferCodeOneTimeUseCodeCreateData{
 					Type: asc.ResourceTypeInAppPurchaseOfferCodeOneTimeUseCodes,
-					Attributes: asc.InAppPurchaseOfferCodeOneTimeUseCodeCreateAttributes{
-						NumberOfCodes:  *quantity,
-						ExpirationDate: normalizedExpiration,
-					},
+						Attributes: asc.InAppPurchaseOfferCodeOneTimeUseCodeCreateAttributes{
+							NumberOfCodes:  *quantity,
+							ExpirationDate: normalizedExpiration,
+							Environment:    strings.TrimSpace(*environment),
+						},
 					Relationships: asc.InAppPurchaseOfferCodeOneTimeUseCodeCreateRelationships{
 						OfferCode: asc.Relationship{
 							Data: asc.ResourceData{
