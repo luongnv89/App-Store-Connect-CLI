@@ -130,6 +130,7 @@ func collectAuthCapabilities(ctx context.Context, appID, vendorNumber string) (*
 		authAppsCapabilityCheck(ctx, client),
 		authBuildsCapabilityCheck(ctx, client, appID),
 		authReviewsCapabilityCheck(ctx, client, appID),
+		authSubscriptionsCapabilityCheck(ctx, client, appID),
 	}
 	summary := summarizeAuthCapabilities(checks)
 
@@ -271,6 +272,25 @@ func authReviewsCapabilityCheck(parent context.Context, client authCapabilitiesC
 		fmt.Sprintf("can list customer reviews for app %s", appID),
 		fmt.Sprintf("credentials are valid but customer review access is unavailable for app %s", appID),
 		fmt.Sprintf("reviews probe failed for app %s", appID),
+	)
+}
+
+func authSubscriptionsCapabilityCheck(parent context.Context, client authCapabilitiesClient, appID string) authCapabilityCheck {
+	if strings.TrimSpace(appID) == "" {
+		return authSkippedCapabilityCheck("subscriptions", "app", "provide --app or ASC_APP_ID to probe subscriptions access")
+	}
+
+	requestCtx, cancel := shared.ContextWithTimeout(parent)
+	defer cancel()
+
+	_, err := client.GetSubscriptionGroups(requestCtx, appID, asc.WithSubscriptionGroupsLimit(1))
+	return authCapabilityCheckFromError(
+		"subscriptions",
+		"app",
+		err,
+		fmt.Sprintf("can list subscription groups for app %s", appID),
+		fmt.Sprintf("credentials are valid but subscription group access is unavailable for app %s", appID),
+		fmt.Sprintf("subscriptions probe failed for app %s", appID),
 	)
 }
 
