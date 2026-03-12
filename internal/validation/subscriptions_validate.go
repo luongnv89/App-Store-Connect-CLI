@@ -97,8 +97,7 @@ func subscriptionFetchChecks(reason string) []CheckResult {
 func subscriptionImageChecks(subs []Subscription) []CheckResult {
 	var checks []CheckResult
 	for _, sub := range subs {
-		state := strings.ToUpper(strings.TrimSpace(sub.State))
-		if state == "REMOVED_FROM_SALE" || state == "DEVELOPER_REMOVED_FROM_SALE" {
+		if isRemovedMonetizationState(sub.State) {
 			continue
 		}
 		label := formatSubscriptionLabel(sub)
@@ -145,21 +144,16 @@ func subscriptionReviewReadinessChecks(subs []Subscription) []CheckResult {
 		"IN_REVIEW":               {},
 		"PENDING_BINARY_APPROVAL": {},
 	}
-	ignoreStates := map[string]struct{}{
-		"DEVELOPER_REMOVED_FROM_SALE": {},
-		"REMOVED_FROM_SALE":           {},
-	}
-
 	var checks []CheckResult
 	for _, sub := range subs {
-		state := strings.ToUpper(strings.TrimSpace(sub.State))
+		state := normalizeMonetizationState(sub.State)
 		if state == "" {
 			continue
 		}
 		if _, ok := okStates[state]; ok {
 			continue
 		}
-		if _, ok := ignoreStates[state]; ok {
+		if isRemovedMonetizationState(state) {
 			continue
 		}
 
@@ -213,16 +207,10 @@ func remediationForSubscriptionState(state string) string {
 }
 
 func subscriptionPricingVerificationChecks(subs []Subscription) []CheckResult {
-	ignoreStates := map[string]struct{}{
-		"DEVELOPER_REMOVED_FROM_SALE": {},
-		"MISSING_METADATA":            {},
-		"REMOVED_FROM_SALE":           {},
-	}
-
 	var checks []CheckResult
 	for _, sub := range subs {
-		state := strings.ToUpper(strings.TrimSpace(sub.State))
-		if _, ok := ignoreStates[state]; ok {
+		state := normalizeMonetizationState(sub.State)
+		if state == "MISSING_METADATA" || isRemovedMonetizationState(state) {
 			continue
 		}
 		if !sub.PriceCheckSkipped {
@@ -273,15 +261,10 @@ func subscriptionPricingCoverageChecks(subs []Subscription, availableTerritories
 		return nil
 	}
 
-	ignoreStates := map[string]struct{}{
-		"DEVELOPER_REMOVED_FROM_SALE": {},
-		"REMOVED_FROM_SALE":           {},
-	}
-
 	var checks []CheckResult
 	for _, sub := range subs {
-		state := strings.ToUpper(strings.TrimSpace(sub.State))
-		if _, ok := ignoreStates[state]; ok {
+		state := normalizeMonetizationState(sub.State)
+		if isRemovedMonetizationState(state) {
 			continue
 		}
 		if sub.PriceCheckSkipped || sub.PriceCount == 0 {

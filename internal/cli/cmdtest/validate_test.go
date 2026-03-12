@@ -247,8 +247,8 @@ func hasCheckWithID(checks []validation.CheckResult, id string) bool {
 func validValidateFixture() validateFixture {
 	return validateFixture{
 		app:             `{"data":{"type":"apps","id":"app-1","attributes":{"primaryLocale":"en-US"}}}`,
-		versions:        `{"data":[{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0"}}]}`,
-		version:         `{"data":{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0","appVersionState":"PREPARE_FOR_SUBMISSION"},"relationships":{"app":{"data":{"type":"apps","id":"app-1"}}}}}`,
+		versions:        `{"data":[{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0","copyright":"2026 Test Company"}}]}`,
+		version:         `{"data":{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0","appVersionState":"PREPARE_FOR_SUBMISSION","copyright":"2026 Test Company"},"relationships":{"app":{"data":{"type":"apps","id":"app-1"}}}}}`,
 		appInfos:        `{"data":[{"type":"appInfos","id":"info-1","attributes":{"state":"PREPARE_FOR_SUBMISSION"}}]}`,
 		appInfoLocs:     `{"data":[{"type":"appInfoLocalizations","id":"info-loc-1","attributes":{"locale":"en-US","name":"My App","subtitle":"Subtitle","privacyPolicyUrl":"https://example.com/privacy"}}]}`,
 		versionLocs:     `{"data":[{"type":"appStoreVersionLocalizations","id":"ver-loc-1","attributes":{"locale":"en-US","description":"Description","keywords":"keyword","whatsNew":"Notes","promotionalText":"Promo","supportUrl":"https://support.example.com","marketingUrl":"https://marketing.example.com"}}]}`,
@@ -861,6 +861,10 @@ func TestValidateSupportsVersionLookup(t *testing.T) {
 func TestValidateStrictExitBehavior(t *testing.T) {
 	fixture := validValidateFixture()
 	fixture.appInfoLocs = `{"data":[{"type":"appInfoLocalizations","id":"info-loc-1","attributes":{"locale":"en-US","name":"My App"}}]}`
+	// Clear subscriptions so the missing privacyPolicyUrl triggers a warning
+	// (metadata.recommended) instead of an error (legal.required).
+	fixture.subscriptionGroups = `{"data":[]}`
+	fixture.subscriptionsByGroup = nil
 
 	client := newValidateTestClient(t, fixture)
 	restore := validate.SetClientFactory(func() (*asc.Client, error) {
@@ -896,6 +900,10 @@ func TestValidateStrictExitBehavior(t *testing.T) {
 func TestValidateWarnsWhenPrivacyPolicyURLMissing(t *testing.T) {
 	fixture := validValidateFixture()
 	fixture.appInfoLocs = `{"data":[{"type":"appInfoLocalizations","id":"info-loc-1","attributes":{"locale":"en-US","name":"My App","subtitle":"Subtitle"}}]}`
+	// Clear subscriptions so the missing privacyPolicyUrl triggers a warning
+	// (metadata.recommended) instead of an error (legal.required).
+	fixture.subscriptionGroups = `{"data":[]}`
+	fixture.subscriptionsByGroup = nil
 
 	client := newValidateTestClient(t, fixture)
 	restore := validate.SetClientFactory(func() (*asc.Client, error) {
@@ -931,7 +939,7 @@ func TestValidateWarnsWhenPrivacyPolicyURLMissing(t *testing.T) {
 
 func TestValidateFailsForNonEditableVersionState(t *testing.T) {
 	fixture := validValidateFixture()
-	fixture.version = `{"data":{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0","appVersionState":"WAITING_FOR_REVIEW"},"relationships":{"app":{"data":{"type":"apps","id":"app-1"}}}}}`
+	fixture.version = `{"data":{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0","appVersionState":"WAITING_FOR_REVIEW","copyright":"2026 Test Company"},"relationships":{"app":{"data":{"type":"apps","id":"app-1"}}}}}`
 
 	client := newValidateTestClient(t, fixture)
 	restore := validate.SetClientFactory(func() (*asc.Client, error) {
@@ -1822,7 +1830,7 @@ func TestValidateNoIAPChecksWhenAppHasNoIAPs(t *testing.T) {
 
 func TestValidateWarnsScheduledReleaseDateInPast(t *testing.T) {
 	fixture := validValidateFixture()
-	fixture.version = `{"data":{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0","appVersionState":"PREPARE_FOR_SUBMISSION","releaseType":"SCHEDULED","earliestReleaseDate":"2020-01-01T00:00:00+00:00"},"relationships":{"app":{"data":{"type":"apps","id":"app-1"}}}}}`
+	fixture.version = `{"data":{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0","appVersionState":"PREPARE_FOR_SUBMISSION","releaseType":"SCHEDULED","earliestReleaseDate":"2020-01-01T00:00:00+00:00","copyright":"2026 Test Company"},"relationships":{"app":{"data":{"type":"apps","id":"app-1"}}}}}`
 
 	client := newValidateTestClient(t, fixture)
 	restore := validate.SetClientFactory(func() (*asc.Client, error) {
@@ -1854,7 +1862,7 @@ func TestValidateWarnsScheduledReleaseDateInPast(t *testing.T) {
 
 func TestValidateShowsManualReleaseInfo(t *testing.T) {
 	fixture := validValidateFixture()
-	fixture.version = `{"data":{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0","appVersionState":"PREPARE_FOR_SUBMISSION","releaseType":"MANUAL"},"relationships":{"app":{"data":{"type":"apps","id":"app-1"}}}}}`
+	fixture.version = `{"data":{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0","appVersionState":"PREPARE_FOR_SUBMISSION","releaseType":"MANUAL","copyright":"2026 Test Company"},"relationships":{"app":{"data":{"type":"apps","id":"app-1"}}}}}`
 
 	client := newValidateTestClient(t, fixture)
 	restore := validate.SetClientFactory(func() (*asc.Client, error) {
