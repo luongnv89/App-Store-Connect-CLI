@@ -82,10 +82,10 @@ type VersionLocalization struct {
 
 // AppInfoLocalization represents app info metadata.
 type AppInfoLocalization struct {
-	ID               string
-	Locale           string
-	Name             string
-	Subtitle         string
+	ID                string
+	Locale            string
+	Name              string
+	Subtitle          string
 	PrivacyPolicyURL  string
 	PrivacyChoicesURL string
 }
