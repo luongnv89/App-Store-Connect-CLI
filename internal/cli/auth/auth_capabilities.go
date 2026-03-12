@@ -389,6 +389,13 @@ func authCapabilityCheckFromError(name, scope string, err error, successMessage,
 			Status:  "unavailable",
 			Message: unavailableMessage,
 		}
+	case errors.Is(err, asc.ErrUnauthorized):
+		return authCapabilityCheck{
+			Name:    name,
+			Scope:   scope,
+			Status:  "inconclusive",
+			Message: fmt.Sprintf("%s: credentials are unauthorized or expired", inconclusivePrefix),
+		}
 	case errors.Is(err, asc.ErrNotFound) || asc.IsNotFound(err):
 		return authCapabilityCheck{
 			Name:    name,
