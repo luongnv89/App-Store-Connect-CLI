@@ -2,6 +2,7 @@ package builds
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -624,6 +625,44 @@ func findPreReleaseVersionIDsForBuildsList(
 	return ids, nil
 }
 
+func attachBuildInfoPreReleaseVersion(
+	ctx context.Context,
+	client *asc.Client,
+	build *asc.BuildResponse,
+) error {
+	if client == nil || build == nil {
+		return nil
+	}
+	if strings.TrimSpace(build.Data.ID) == "" {
+		return nil
+	}
+
+	preReleaseVersion, err := client.GetBuildPreReleaseVersion(ctx, build.Data.ID)
+	if err != nil {
+		return nil
+	}
+
+	included, err := json.Marshal([]asc.PreReleaseVersion{preReleaseVersion.Data})
+	if err != nil {
+		return fmt.Errorf("failed to encode pre-release version include: %w", err)
+	}
+	build.Included = included
+
+	relationships, err := json.Marshal(map[string]any{
+		"preReleaseVersion": map[string]any{
+			"data": map[string]string{
+				"type": "preReleaseVersions",
+				"id":   preReleaseVersion.Data.ID,
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to encode pre-release version relationship: %w", err)
+	}
+	build.Data.Relationships = relationships
+	return nil
+}
+
 // BuildsInfoCommand returns a build info subcommand.
 func BuildsInfoCommand() *ffcli.Command {
 	fs := flag.NewFlagSet("builds info", flag.ExitOnError)
@@ -658,6 +697,9 @@ Examples:
 			build, err := client.GetBuild(requestCtx, strings.TrimSpace(*buildID))
 			if err != nil {
 				return fmt.Errorf("builds info: failed to fetch: %w", err)
+			}
+			if err := attachBuildInfoPreReleaseVersion(requestCtx, client, build); err != nil {
+				return fmt.Errorf("builds info: %w", err)
 			}
 
 			format := *output.Output
