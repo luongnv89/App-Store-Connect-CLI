@@ -89,6 +89,7 @@ Examples:
 			}
 
 			resolvedVersionID := strings.TrimSpace(*versionID)
+			effectivePlatform := normalizedPlatform
 			if resolvedVersionID == "" {
 				resolveCtx, resolveCancel := shared.ContextWithTimeout(ctx)
 				resolvedVersionID, err = shared.ResolveAppStoreVersionID(resolveCtx, client, resolvedAppID, strings.TrimSpace(*version), normalizedPlatform)
@@ -96,14 +97,23 @@ Examples:
 				if err != nil {
 					return fmt.Errorf("submit create: %w", err)
 				}
+			} else {
+				versionCtx, versionCancel := shared.ContextWithTimeout(ctx)
+				versionResp, versionErr := client.GetAppStoreVersion(versionCtx, resolvedVersionID)
+				versionCancel()
+				if versionErr != nil {
+					return fmt.Errorf("submit create: failed to fetch version %q: %w", resolvedVersionID, versionErr)
+				}
+
+				effectivePlatform, err = shared.NormalizeAppStoreVersionPlatform(string(versionResp.Data.Attributes.Platform))
+				if err != nil {
+					return fmt.Errorf("submit create: version %q returned unsupported platform %q", resolvedVersionID, string(versionResp.Data.Attributes.Platform))
+				}
 			}
 
-			localizationCtx, localizationCancel := shared.ContextWithTimeout(ctx)
-			if err := runSubmitCreateLocalizationPreflight(localizationCtx, client, resolvedAppID, resolvedVersionID, normalizedPlatform); err != nil {
-				localizationCancel()
+			if err := runSubmitCreateLocalizationPreflight(ctx, client, resolvedAppID, resolvedVersionID, effectivePlatform); err != nil {
 				return err
 			}
-			localizationCancel()
 
 			runSubmitCreateSubscriptionPreflight(ctx, client, resolvedAppID)
 
@@ -116,11 +126,11 @@ Examples:
 			}
 
 			// Cancel stale READY_FOR_REVIEW submissions to avoid orphans from prior failed attempts.
-			cancelStaleReviewSubmissions(requestCtx, client, resolvedAppID, normalizedPlatform)
+			cancelStaleReviewSubmissions(requestCtx, client, resolvedAppID, effectivePlatform)
 
 			// Use the new reviewSubmissions API (the old appStoreVersionSubmissions is deprecated)
 			// Step 1: Create review submission for the app
-			reviewSubmission, err := client.CreateReviewSubmission(requestCtx, resolvedAppID, asc.Platform(normalizedPlatform))
+			reviewSubmission, err := client.CreateReviewSubmission(requestCtx, resolvedAppID, asc.Platform(effectivePlatform))
 			if err != nil {
 				return fmt.Errorf("submit create: failed to create review submission: %w", err)
 			}
@@ -155,7 +165,9 @@ Examples:
 }
 
 func runSubmitCreateLocalizationPreflight(ctx context.Context, client *asc.Client, appID, versionID, platform string) error {
-	localizations, err := client.GetAppStoreVersionLocalizations(ctx, versionID, asc.WithAppStoreVersionLocalizationsLimit(200))
+	localizationsCtx, localizationsCancel := shared.ContextWithTimeout(ctx)
+	localizations, err := client.GetAppStoreVersionLocalizations(localizationsCtx, versionID, asc.WithAppStoreVersionLocalizationsLimit(200))
+	localizationsCancel()
 	if err != nil {
 		return fmt.Errorf("submit create: failed to fetch version localizations for preflight: %w", err)
 	}
@@ -164,7 +176,9 @@ func runSubmitCreateLocalizationPreflight(ctx context.Context, client *asc.Clien
 		return fmt.Errorf("submit create: submit preflight failed")
 	}
 
-	requireWhatsNew, err := isAppUpdate(ctx, client, appID, platform)
+	updateCtx, updateCancel := shared.ContextWithTimeout(ctx)
+	requireWhatsNew, err := isAppUpdate(updateCtx, client, appID, platform)
+	updateCancel()
 	if err != nil {
 		return fmt.Errorf("submit create: failed to determine whether version is an app update for preflight: %w", err)
 	}
