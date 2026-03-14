@@ -126,9 +126,9 @@ To add your app:
 1. Authenticate GitHub CLI once:
    `gh auth login`
 2. Run:
-   `asc apps wall submit --app "1234567890" --platform "iOS,macOS" --confirm`
+   `asc apps wall submit --app "1234567890" --confirm`
 3. Optional preview:
-   `asc apps wall submit --app "1234567890" --platform "iOS,macOS" --dry-run`
+   `asc apps wall submit --app "1234567890" --dry-run`
 
 The command uses your authenticated `gh` session to fork the repo, create a branch, update `docs/wall-of-apps.json`, and open a pull request automatically.
 It resolves the public App Store name, URL, and icon from the app ID automatically. For entries that are not on the public App Store yet, use `--link` with `--name`.
@@ -137,10 +137,6 @@ Format:
 ```json
 {
   "app": "Your App Name",
-  "link": "https://apps.apple.com/app/id1234567890",
-  "creator": "your-github-handle",
-  "platform": ["iOS"]
+  "link": "https://apps.apple.com/app/id1234567890"
 }
 ```
-
-Platform values are free-form labels (for example: `iOS`, `macOS`, `watchOS`, `tvOS`, `visionOS`, `Android`, `Web`).

@@ -67,21 +67,16 @@ func iapReviewReadinessChecks(iaps []IAP) []CheckResult {
 		"IN_REVIEW":               {},
 		"PENDING_BINARY_APPROVAL": {},
 	}
-	ignoreStates := map[string]struct{}{
-		"DEVELOPER_REMOVED_FROM_SALE": {},
-		"REMOVED_FROM_SALE":           {},
-	}
-
 	var checks []CheckResult
 	for _, iap := range iaps {
-		state := strings.ToUpper(strings.TrimSpace(iap.State))
+		state := normalizeMonetizationState(iap.State)
 		if state == "" {
 			continue
 		}
 		if _, ok := okStates[state]; ok {
 			continue
 		}
-		if _, ok := ignoreStates[state]; ok {
+		if isRemovedMonetizationState(state) {
 			continue
 		}
 

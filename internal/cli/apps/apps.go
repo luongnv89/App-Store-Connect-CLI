@@ -45,7 +45,7 @@ Examples:
   asc apps list --bundle-id "com.example.app"
   asc apps create --name "My App" --bundle-id "com.example.app" --sku "MYAPP123"
   asc apps wall
-  asc apps wall submit --app "1234567890" --platform "iOS,macOS" --confirm
+  asc apps wall submit --app "1234567890" --confirm
   asc apps get --id "APP_ID"
   asc apps info view --app "APP_ID"
   asc apps info edit --app "APP_ID" --locale "en-US" --whats-new "Bug fixes"

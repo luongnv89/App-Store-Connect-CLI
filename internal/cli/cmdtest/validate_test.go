@@ -247,11 +247,11 @@ func hasCheckWithID(checks []validation.CheckResult, id string) bool {
 func validValidateFixture() validateFixture {
 	return validateFixture{
 		app:             `{"data":{"type":"apps","id":"app-1","attributes":{"primaryLocale":"en-US"}}}`,
-		versions:        `{"data":[{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0"}}]}`,
-		version:         `{"data":{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0","appVersionState":"PREPARE_FOR_SUBMISSION"},"relationships":{"app":{"data":{"type":"apps","id":"app-1"}}}}}`,
+		versions:        `{"data":[{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0","copyright":"2026 Test Company"}}]}`,
+		version:         `{"data":{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0","appVersionState":"PREPARE_FOR_SUBMISSION","copyright":"2026 Test Company"},"relationships":{"app":{"data":{"type":"apps","id":"app-1"}}}}}`,
 		appInfos:        `{"data":[{"type":"appInfos","id":"info-1","attributes":{"state":"PREPARE_FOR_SUBMISSION"}}]}`,
 		appInfoLocs:     `{"data":[{"type":"appInfoLocalizations","id":"info-loc-1","attributes":{"locale":"en-US","name":"My App","subtitle":"Subtitle","privacyPolicyUrl":"https://example.com/privacy"}}]}`,
-		versionLocs:     `{"data":[{"type":"appStoreVersionLocalizations","id":"ver-loc-1","attributes":{"locale":"en-US","description":"Description","keywords":"keyword","whatsNew":"Notes","promotionalText":"Promo","supportUrl":"https://support.example.com","marketingUrl":"https://marketing.example.com"}}]}`,
+		versionLocs:     fmt.Sprintf(`{"data":[{"type":"appStoreVersionLocalizations","id":"ver-loc-1","attributes":{"locale":"en-US","description":"Description. Terms of Use: %s","keywords":"keyword","whatsNew":"Notes","promotionalText":"Promo","supportUrl":"https://support.example.com","marketingUrl":"https://marketing.example.com"}}]}`, validation.AppleStandardEULAURL),
 		reviewDetails:   `{"data":{"type":"appStoreReviewDetails","id":"review-detail-1","attributes":{"contactFirstName":"A","contactLastName":"B","contactEmail":"a@example.com","contactPhone":"123","demoAccountName":"","demoAccountPassword":"","demoAccountRequired":false,"notes":"Review notes"}}}`,
 		primaryCategory: `{"data":{"type":"appCategories","id":"cat-1"}}`,
 		build:           `{"data":{"type":"builds","id":"build-1","attributes":{"version":"1.0","processingState":"VALID","expired":false}}}`,
@@ -475,6 +475,106 @@ func TestValidateWarnsWhenSubscriptionNeedsAttention(t *testing.T) {
 	}
 	if !hasCheckWithID(report.Checks, "subscriptions.review_readiness.needs_attention") {
 		t.Fatalf("expected subscriptions.review_readiness.needs_attention, got %+v", report.Checks)
+	}
+}
+
+func TestValidateWarnsWhenSubscriptionDescriptionMissingTermsLink(t *testing.T) {
+	fixture := validValidateFixture()
+	fixture.versionLocs = `{"data":[{"type":"appStoreVersionLocalizations","id":"ver-loc-1","attributes":{"locale":"en-US","description":"Subscription description without a legal link","keywords":"keyword","whatsNew":"Notes","promotionalText":"Promo","supportUrl":"https://support.example.com","marketingUrl":"https://marketing.example.com"}}]}`
+
+	client := newValidateTestClient(t, fixture)
+	restore := validate.SetClientFactory(func() (*asc.Client, error) {
+		return client, nil
+	})
+	defer restore()
+
+	root := RootCommand("1.2.3")
+	stdout, stderr := captureOutput(t, func() {
+		if err := root.Parse([]string{"validate", "--app", "app-1", "--version-id", "ver-1"}); err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		if err := root.Run(context.Background()); err != nil {
+			t.Fatalf("expected warning-only validate run, got %v", err)
+		}
+	})
+	if stderr != "" {
+		t.Fatalf("expected empty stderr, got %q", stderr)
+	}
+
+	var report validation.Report
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("failed to parse JSON output: %v", err)
+	}
+	if !hasCheckWithID(report.Checks, "legal.subscription.terms_of_use_link") {
+		t.Fatalf("expected terms link warning, got %+v", report.Checks)
+	}
+}
+
+func TestValidateAcceptsAppleStandardEULAURLInDescription(t *testing.T) {
+	fixture := validValidateFixture()
+
+	client := newValidateTestClient(t, fixture)
+	restore := validate.SetClientFactory(func() (*asc.Client, error) {
+		return client, nil
+	})
+	defer restore()
+
+	root := RootCommand("1.2.3")
+	stdout, stderr := captureOutput(t, func() {
+		if err := root.Parse([]string{"validate", "--app", "app-1", "--version-id", "ver-1"}); err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		if err := root.Run(context.Background()); err != nil {
+			t.Fatalf("expected validate to succeed, got %v", err)
+		}
+	})
+	if stderr != "" {
+		t.Fatalf("expected empty stderr, got %q", stderr)
+	}
+
+	var report validation.Report
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("failed to parse JSON output: %v", err)
+	}
+	if hasCheckWithID(report.Checks, "legal.subscription.terms_of_use_link") {
+		t.Fatalf("did not expect terms link warning when Apple EULA URL is present, got %+v", report.Checks)
+	}
+}
+
+func TestValidateStrictBlocksWhenSubscriptionDescriptionMissingTermsLink(t *testing.T) {
+	fixture := validValidateFixture()
+	fixture.versionLocs = `{"data":[{"type":"appStoreVersionLocalizations","id":"ver-loc-1","attributes":{"locale":"en-US","description":"Subscription description without a legal link","keywords":"keyword","whatsNew":"Notes","promotionalText":"Promo","supportUrl":"https://support.example.com","marketingUrl":"https://marketing.example.com"}}]}`
+
+	client := newValidateTestClient(t, fixture)
+	restore := validate.SetClientFactory(func() (*asc.Client, error) {
+		return client, nil
+	})
+	defer restore()
+
+	root := RootCommand("1.2.3")
+	var runErr error
+	stdout, stderr := captureOutput(t, func() {
+		if err := root.Parse([]string{"validate", "--app", "app-1", "--version-id", "ver-1", "--strict"}); err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		runErr = root.Run(context.Background())
+	})
+	if stderr != "" {
+		t.Fatalf("expected empty stderr, got %q", stderr)
+	}
+	if runErr == nil {
+		t.Fatal("expected warning-only terms check to fail under --strict")
+	}
+	if _, ok := errors.AsType[ReportedError](runErr); !ok {
+		t.Fatalf("expected ReportedError, got %v", runErr)
+	}
+
+	var report validation.Report
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("failed to parse JSON output: %v", err)
+	}
+	if !hasCheckWithID(report.Checks, "legal.subscription.terms_of_use_link") {
+		t.Fatalf("expected terms link warning, got %+v", report.Checks)
 	}
 }
 
@@ -861,6 +961,10 @@ func TestValidateSupportsVersionLookup(t *testing.T) {
 func TestValidateStrictExitBehavior(t *testing.T) {
 	fixture := validValidateFixture()
 	fixture.appInfoLocs = `{"data":[{"type":"appInfoLocalizations","id":"info-loc-1","attributes":{"locale":"en-US","name":"My App"}}]}`
+	// Clear subscriptions so the missing privacyPolicyUrl triggers a warning
+	// (metadata.recommended) instead of an error (legal.required).
+	fixture.subscriptionGroups = `{"data":[]}`
+	fixture.subscriptionsByGroup = nil
 
 	client := newValidateTestClient(t, fixture)
 	restore := validate.SetClientFactory(func() (*asc.Client, error) {
@@ -896,6 +1000,10 @@ func TestValidateStrictExitBehavior(t *testing.T) {
 func TestValidateWarnsWhenPrivacyPolicyURLMissing(t *testing.T) {
 	fixture := validValidateFixture()
 	fixture.appInfoLocs = `{"data":[{"type":"appInfoLocalizations","id":"info-loc-1","attributes":{"locale":"en-US","name":"My App","subtitle":"Subtitle"}}]}`
+	// Clear subscriptions so the missing privacyPolicyUrl triggers a warning
+	// (metadata.recommended) instead of an error (legal.required).
+	fixture.subscriptionGroups = `{"data":[]}`
+	fixture.subscriptionsByGroup = nil
 
 	client := newValidateTestClient(t, fixture)
 	restore := validate.SetClientFactory(func() (*asc.Client, error) {
@@ -931,7 +1039,7 @@ func TestValidateWarnsWhenPrivacyPolicyURLMissing(t *testing.T) {
 
 func TestValidateFailsForNonEditableVersionState(t *testing.T) {
 	fixture := validValidateFixture()
-	fixture.version = `{"data":{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0","appVersionState":"WAITING_FOR_REVIEW"},"relationships":{"app":{"data":{"type":"apps","id":"app-1"}}}}}`
+	fixture.version = `{"data":{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0","appVersionState":"WAITING_FOR_REVIEW","copyright":"2026 Test Company"},"relationships":{"app":{"data":{"type":"apps","id":"app-1"}}}}}`
 
 	client := newValidateTestClient(t, fixture)
 	restore := validate.SetClientFactory(func() (*asc.Client, error) {
@@ -969,7 +1077,7 @@ func TestValidateSkipsWhatsNewOnInitialRelease(t *testing.T) {
 	// Simulate an initial v1.0 release where Apple doesn't allow "What's New".
 	// The API can return an empty or missing `whatsNew` field; either way it
 	// should not produce a warning.
-	fixture.versionLocs = `{"data":[{"type":"appStoreVersionLocalizations","id":"ver-loc-1","attributes":{"locale":"en-US","description":"Description","keywords":"keyword","promotionalText":"Promo","supportUrl":"https://support.example.com","marketingUrl":"https://marketing.example.com"}}]}`
+	fixture.versionLocs = fmt.Sprintf(`{"data":[{"type":"appStoreVersionLocalizations","id":"ver-loc-1","attributes":{"locale":"en-US","description":"Description. Terms of Use: %s","keywords":"keyword","promotionalText":"Promo","supportUrl":"https://support.example.com","marketingUrl":"https://marketing.example.com"}}]}`, validation.AppleStandardEULAURL)
 
 	client := newValidateTestClient(t, fixture)
 	restore := validate.SetClientFactory(func() (*asc.Client, error) {
@@ -1822,7 +1930,7 @@ func TestValidateNoIAPChecksWhenAppHasNoIAPs(t *testing.T) {
 
 func TestValidateWarnsScheduledReleaseDateInPast(t *testing.T) {
 	fixture := validValidateFixture()
-	fixture.version = `{"data":{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0","appVersionState":"PREPARE_FOR_SUBMISSION","releaseType":"SCHEDULED","earliestReleaseDate":"2020-01-01T00:00:00+00:00"},"relationships":{"app":{"data":{"type":"apps","id":"app-1"}}}}}`
+	fixture.version = `{"data":{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0","appVersionState":"PREPARE_FOR_SUBMISSION","releaseType":"SCHEDULED","earliestReleaseDate":"2020-01-01T00:00:00+00:00","copyright":"2026 Test Company"},"relationships":{"app":{"data":{"type":"apps","id":"app-1"}}}}}`
 
 	client := newValidateTestClient(t, fixture)
 	restore := validate.SetClientFactory(func() (*asc.Client, error) {
@@ -1854,7 +1962,7 @@ func TestValidateWarnsScheduledReleaseDateInPast(t *testing.T) {
 
 func TestValidateShowsManualReleaseInfo(t *testing.T) {
 	fixture := validValidateFixture()
-	fixture.version = `{"data":{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0","appVersionState":"PREPARE_FOR_SUBMISSION","releaseType":"MANUAL"},"relationships":{"app":{"data":{"type":"apps","id":"app-1"}}}}}`
+	fixture.version = `{"data":{"type":"appStoreVersions","id":"ver-1","attributes":{"platform":"IOS","versionString":"1.0","appVersionState":"PREPARE_FOR_SUBMISSION","releaseType":"MANUAL","copyright":"2026 Test Company"},"relationships":{"app":{"data":{"type":"apps","id":"app-1"}}}}}`
 
 	client := newValidateTestClient(t, fixture)
 	restore := validate.SetClientFactory(func() (*asc.Client, error) {

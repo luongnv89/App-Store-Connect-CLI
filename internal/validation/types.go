@@ -65,6 +65,7 @@ type Input struct {
 	AgeRatingDeclaration        *AgeRatingDeclaration
 	ReleaseType                 string
 	EarliestReleaseDate         string
+	Copyright                   string
 }
 
 // VersionLocalization represents version-level metadata.
@@ -81,11 +82,12 @@ type VersionLocalization struct {
 
 // AppInfoLocalization represents app info metadata.
 type AppInfoLocalization struct {
-	ID               string
-	Locale           string
-	Name             string
-	Subtitle         string
-	PrivacyPolicyURL string
+	ID                string
+	Locale            string
+	Name              string
+	Subtitle          string
+	PrivacyPolicyURL  string
+	PrivacyChoicesURL string
 }
 
 // ScreenshotSet represents a screenshot set and its assets.

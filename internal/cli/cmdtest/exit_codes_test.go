@@ -229,6 +229,11 @@ func TestRun_UsageValidationErrorsReturnExitUsage(t *testing.T) {
 			wantErr: "--processing-state must be one of",
 		},
 		{
+			name:    "builds list invalid platform",
+			args:    []string{"builds", "list", "--app", "APP_123", "--platform", "ANDROID"},
+			wantErr: "--platform must be one of",
+		},
+		{
 			name:    "builds wait missing selector",
 			args:    []string{"builds", "wait"},
 			wantErr: "--app is required when --build is not provided",
@@ -242,14 +247,13 @@ func TestRun_UsageValidationErrorsReturnExitUsage(t *testing.T) {
 			name: "apps wall submit parent wall flags",
 			args: []string{
 				"apps", "wall",
-				"--include-platforms", "iOS",
+				"--limit", "20",
 				"--output", "markdown",
 				"submit",
 				"--app", "1234567890",
-				"--platform", "iOS",
 				"--dry-run",
 			},
-			wantErr: `apps wall submit does not accept parent wall flags (--include-platforms, --output)`,
+			wantErr: `apps wall submit does not accept parent wall flags (--limit, --output)`,
 		},
 	}
 

@@ -2,9 +2,12 @@ package validation
 
 // Validate runs all validation rules and returns a report.
 func Validate(input Input, strict bool) Report {
+	activeMonetization := hasActiveMonetization(input.Subscriptions, input.IAPs)
+	reviewRelevantSubscriptions := hasReviewRelevantSubscriptions(input.Subscriptions)
+
 	checks := make([]CheckResult, 0)
 	checks = append(checks, metadataLengthChecks(input.VersionLocalizations, input.AppInfoLocalizations)...)
-	checks = append(checks, requiredFieldChecks(input.PrimaryLocale, input.VersionString, input.VersionState, input.VersionLocalizations, input.AppInfoLocalizations)...)
+	checks = append(checks, requiredFieldChecks(input.PrimaryLocale, input.VersionString, input.VersionState, activeMonetization, input.VersionLocalizations, input.AppInfoLocalizations)...)
 	checks = append(checks, reviewDetailsChecks(input.ReviewDetails)...)
 	checks = append(checks, categoryChecks(input.AppInfoID, input.PrimaryCategoryID)...)
 	checks = append(checks, buildChecks(input.Build)...)
@@ -22,6 +25,7 @@ func Validate(input Input, strict bool) Report {
 	checks = append(checks, iapReviewReadinessChecks(input.IAPs)...)
 	checks = append(checks, ageRatingChecks(input.AgeRatingDeclaration)...)
 	checks = append(checks, releaseChecks(input.ReleaseType, input.EarliestReleaseDate)...)
+	checks = append(checks, legalChecks(input.Copyright, activeMonetization, reviewRelevantSubscriptions, input.VersionLocalizations, input.AppInfoLocalizations)...)
 
 	summary := summarize(checks, strict)
 

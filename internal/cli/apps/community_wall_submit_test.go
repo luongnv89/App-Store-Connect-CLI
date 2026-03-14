@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func TestCollectCommunityWallSubmitInputUsesGitHubLoginWhenNonInteractive(t *testing.T) {
+func TestCollectCommunityWallSubmitInputAllowsAppIDOnlyWhenNonInteractive(t *testing.T) {
 	previousPromptEnabled := communityWallPromptEnabled
 	communityWallPromptEnabled = func() bool { return false }
 	t.Cleanup(func() { communityWallPromptEnabled = previousPromptEnabled })
@@ -20,9 +20,6 @@ func TestCollectCommunityWallSubmitInputUsesGitHubLoginWhenNonInteractive(t *tes
 		"1234567890",
 		"",
 		"",
-		"",
-		"ios, macos",
-		"octocat",
 	)
 	if err != nil {
 		t.Fatalf("collect input: %v", err)
@@ -30,12 +27,6 @@ func TestCollectCommunityWallSubmitInputUsesGitHubLoginWhenNonInteractive(t *tes
 
 	if input.AppID != "1234567890" {
 		t.Fatalf("expected app ID to be preserved, got %q", input.AppID)
-	}
-	if input.Creator != "octocat" {
-		t.Fatalf("expected creator defaulted from gh login, got %q", input.Creator)
-	}
-	if got := strings.Join(input.Platform, ","); got != "iOS,macOS" {
-		t.Fatalf("expected canonicalized platforms, got %q", got)
 	}
 }
 
@@ -101,9 +92,7 @@ func TestSubmitCommunityWallEntryDryRunReturnsPlan(t *testing.T) {
 
 	result, err := submitCommunityWallEntry(context.Background(), communityWallSubmitRequest{
 		Input: communityWallSubmitInput{
-			AppID:    "1234567890",
-			Creator:  "tester",
-			Platform: []string{"iOS", "macOS"},
+			AppID: "1234567890",
 		},
 		GitHubToken: "token",
 		GitHubLogin: "tester",
@@ -193,9 +182,7 @@ func TestSubmitCommunityWallEntryRejectsDuplicateAppID(t *testing.T) {
 
 	_, err := submitCommunityWallEntry(context.Background(), communityWallSubmitRequest{
 		Input: communityWallSubmitInput{
-			AppID:    "1234567890",
-			Creator:  "tester",
-			Platform: []string{"iOS"},
+			AppID: "1234567890",
 		},
 		GitHubToken: "token",
 		GitHubLogin: "tester",
@@ -213,7 +200,7 @@ func TestSubmitCommunityWallEntryRejectsMalformedExistingSource(t *testing.T) {
 	sourceJSON := `[
   {
     "app": "Alpha",
-    "link": "https://example.com/alpha",
+    "link": "",
     "creator": "",
     "platform": ["iOS"]
   }
@@ -266,9 +253,7 @@ func TestSubmitCommunityWallEntryRejectsMalformedExistingSource(t *testing.T) {
 
 	_, err := submitCommunityWallEntry(context.Background(), communityWallSubmitRequest{
 		Input: communityWallSubmitInput{
-			AppID:    "1234567890",
-			Creator:  "tester",
-			Platform: []string{"iOS"},
+			AppID: "1234567890",
 		},
 		GitHubToken: "token",
 		GitHubLogin: "tester",
@@ -277,7 +262,7 @@ func TestSubmitCommunityWallEntryRejectsMalformedExistingSource(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected malformed source error")
 	}
-	if !strings.Contains(err.Error(), "entry #1: 'creator' is required") {
+	if !strings.Contains(err.Error(), "entry #1: 'link' is required") {
 		t.Fatalf("expected source validation error, got %v", err)
 	}
 }
@@ -312,9 +297,7 @@ func TestSubmitCommunityWallEntryRejectsExistingNonForkRepo(t *testing.T) {
 
 	_, err := submitCommunityWallEntry(context.Background(), communityWallSubmitRequest{
 		Input: communityWallSubmitInput{
-			AppID:    "1234567890",
-			Creator:  "tester",
-			Platform: []string{"iOS"},
+			AppID: "1234567890",
 		},
 		GitHubToken: "token",
 		GitHubLogin: "tester",
@@ -325,6 +308,58 @@ func TestSubmitCommunityWallEntryRejectsExistingNonForkRepo(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "is not a fork of rudrankriyam/App-Store-Connect-CLI") {
 		t.Fatalf("expected non-fork repo error, got %v", err)
+	}
+}
+
+func TestRenderCommunityWallSourceEntriesOmitsOptionalMetadata(t *testing.T) {
+	entries := []communityWallEntry{
+		{
+			App:  "Beta",
+			Link: "https://apps.apple.com/app/id1234567890",
+			Icon: "https://example.com/icon.png",
+		},
+	}
+
+	rendered, err := renderCommunityWallSourceEntries(entries)
+	if err != nil {
+		t.Fatalf("render wall source: %v", err)
+	}
+
+	expected := `[
+  {
+    "app": "Beta",
+    "link": "https://apps.apple.com/app/id1234567890",
+    "icon": "https://example.com/icon.png"
+  }
+]
+`
+	if rendered != expected {
+		t.Fatalf("unexpected rendered wall source:\n%s", rendered)
+	}
+
+	parsed, err := parseCommunityWallSourceEntries([]byte(rendered), "testdata")
+	if err != nil {
+		t.Fatalf("parse rendered wall source: %v", err)
+	}
+	if len(parsed) != 1 {
+		t.Fatalf("expected one parsed entry, got %d", len(parsed))
+	}
+}
+
+func TestCommunityWallPullRequestBodyOmitsOptionalMetadata(t *testing.T) {
+	body := communityWallPullRequestBody(
+		communityWallSubmitInput{AppID: "1234567890"},
+		communityWallEntry{
+			App:  "Beta",
+			Link: "https://apps.apple.com/app/id1234567890",
+		},
+	)
+
+	if strings.Contains(body, "- Creator:") {
+		t.Fatalf("expected creator line to be omitted, got %q", body)
+	}
+	if strings.Contains(body, "- Platform:") {
+		t.Fatalf("expected platform line to be omitted, got %q", body)
 	}
 }
 
