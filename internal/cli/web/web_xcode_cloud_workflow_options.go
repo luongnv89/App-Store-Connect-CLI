@@ -19,6 +19,19 @@ func bindJSONOnlyOutputFlags(fs *flag.FlagSet) shared.OutputFlags {
 	return shared.BindOutputFlagsWithAllowed(fs, "output", "json", "Output format: json", "json")
 }
 
+func flagProvided(fs *flag.FlagSet, name string) bool {
+	if fs == nil {
+		return false
+	}
+	provided := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			provided = true
+		}
+	})
+	return provided
+}
+
 func webXcodeCloudWorkflowOptionsCommand() *ffcli.Command {
 	fs := flag.NewFlagSet("web xcode-cloud workflows options", flag.ExitOnError)
 
@@ -140,15 +153,15 @@ and container file path recommendations. JSON output only.
 ` + webWarningText,
 		FlagSet:   fs,
 		UsageFunc: shared.DefaultUsageFunc,
-		Exec: func(ctx context.Context, args []string) error {
-			pid := strings.TrimSpace(*productID)
-			if pid == "" {
-				fmt.Fprintln(os.Stderr, "Error: --product-id is required")
-				return flag.ErrHelp
-			}
+			Exec: func(ctx context.Context, args []string) error {
+				pid := strings.TrimSpace(*productID)
+				if pid == "" {
+					fmt.Fprintln(os.Stderr, "Error: --product-id is required")
+					return flag.ErrHelp
+				}
 
-			return executeWorkflowOptionsFetch(
-				ctx,
+				return executeWorkflowOptionsFetch(
+					ctx,
 				sessionFlags,
 				&output,
 				"Loading Xcode Cloud product workflow configuration",
@@ -182,15 +195,19 @@ JSON output only.
 ` + webWarningText,
 		FlagSet:   fs,
 		UsageFunc: shared.DefaultUsageFunc,
-		Exec: func(ctx context.Context, args []string) error {
-			pid := strings.TrimSpace(*productID)
-			if pid == "" {
-				fmt.Fprintln(os.Stderr, "Error: --product-id is required")
-				return flag.ErrHelp
-			}
+			Exec: func(ctx context.Context, args []string) error {
+				pid := strings.TrimSpace(*productID)
+				if pid == "" {
+					fmt.Fprintln(os.Stderr, "Error: --product-id is required")
+					return flag.ErrHelp
+				}
+				if flagProvided(fs, "limit") && *limit <= 0 {
+					fmt.Fprintln(os.Stderr, "Error: --limit must be greater than 0 when provided")
+					return flag.ErrHelp
+				}
 
-			return executeWorkflowOptionsFetch(
-				ctx,
+				return executeWorkflowOptionsFetch(
+					ctx,
 				sessionFlags,
 				&output,
 				"Loading Xcode Cloud workflow schemes",

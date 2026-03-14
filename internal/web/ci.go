@@ -501,6 +501,9 @@ func (c *Client) GetCISchemes(
 	if productID == "" {
 		return nil, fmt.Errorf("product id is required")
 	}
+	if limit < 0 {
+		return nil, fmt.Errorf("limit must be zero or greater")
+	}
 	query := url.Values{}
 	if trimmed := strings.TrimSpace(containerFilePath); trimmed != "" {
 		query.Set("container_file_path", trimmed)
