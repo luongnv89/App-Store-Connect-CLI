@@ -79,6 +79,12 @@ type individualAPIKey struct {
 	RevokedByActorID string
 }
 
+type olympusActor struct {
+	ID    string
+	Roles []string
+	Name  string
+}
+
 type APIKeyRoleLookup struct {
 	KeyID       string    `json:"keyId"`
 	Name        string    `json:"name,omitempty"`
@@ -230,6 +236,142 @@ func (c *Client) listIndividualKeys(ctx context.Context) ([]individualAPIKey, er
 		keys = append(keys, key)
 	}
 	return keys, nil
+}
+
+func (c *Client) getActor(ctx context.Context, actorID string) (*olympusActor, error) {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return nil, fmt.Errorf("actor id is required")
+	}
+
+	body, err := c.doOlympusRequest(ctx, http.MethodGet, "/actors/"+actorID+"?include=provider,person", nil)
+	if err != nil {
+		return nil, err
+	}
+	return decodeOlympusActor(body)
+}
+
+func (c *Client) listActors(ctx context.Context) ([]olympusActor, error) {
+	body, err := c.doOlympusRequest(ctx, http.MethodGet, "/actors?include=provider,person&limit=2000", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var payload struct {
+		Data []struct {
+			ID         string `json:"id"`
+			Attributes struct {
+				Roles []string `json:"roles"`
+			} `json:"attributes"`
+			Relationships struct {
+				Person struct {
+					Data *struct {
+						ID string `json:"id"`
+					} `json:"data"`
+				} `json:"person"`
+				Provider struct {
+					Data *struct {
+						ID string `json:"id"`
+					} `json:"data"`
+				} `json:"provider"`
+			} `json:"relationships"`
+		} `json:"data"`
+		Included []struct {
+			Type       string `json:"type"`
+			ID         string `json:"id"`
+			Attributes struct {
+				FirstName string `json:"firstName"`
+				LastName  string `json:"lastName"`
+				Name      string `json:"name"`
+			} `json:"attributes"`
+		} `json:"included"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("failed to parse actors response: %w", err)
+	}
+
+	names := make(map[string]string, len(payload.Included))
+	for _, item := range payload.Included {
+		switch item.Type {
+		case "people":
+			names[item.ID] = fullName(item.Attributes.FirstName, item.Attributes.LastName)
+		case "providers":
+			names[item.ID] = strings.TrimSpace(item.Attributes.Name)
+		}
+	}
+
+	actors := make([]olympusActor, 0, len(payload.Data))
+	for _, item := range payload.Data {
+		actor := olympusActor{
+			ID:    strings.TrimSpace(item.ID),
+			Roles: append([]string(nil), item.Attributes.Roles...),
+		}
+		if item.Relationships.Person.Data != nil {
+			actor.Name = strings.TrimSpace(names[item.Relationships.Person.Data.ID])
+		}
+		if actor.Name == "" && item.Relationships.Provider.Data != nil {
+			actor.Name = strings.TrimSpace(names[item.Relationships.Provider.Data.ID])
+		}
+		actors = append(actors, actor)
+	}
+	return actors, nil
+}
+
+func decodeOlympusActor(body []byte) (*olympusActor, error) {
+	var payload struct {
+		Data struct {
+			ID         string `json:"id"`
+			Attributes struct {
+				Roles []string `json:"roles"`
+			} `json:"attributes"`
+			Relationships struct {
+				Person struct {
+					Data *struct {
+						ID string `json:"id"`
+					} `json:"data"`
+				} `json:"person"`
+				Provider struct {
+					Data *struct {
+						ID string `json:"id"`
+					} `json:"data"`
+				} `json:"provider"`
+			} `json:"relationships"`
+		} `json:"data"`
+		Included []struct {
+			Type       string `json:"type"`
+			ID         string `json:"id"`
+			Attributes struct {
+				FirstName string `json:"firstName"`
+				LastName  string `json:"lastName"`
+				Name      string `json:"name"`
+			} `json:"attributes"`
+		} `json:"included"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("failed to parse actor response: %w", err)
+	}
+
+	names := make(map[string]string, len(payload.Included))
+	for _, item := range payload.Included {
+		switch item.Type {
+		case "people":
+			names[item.ID] = fullName(item.Attributes.FirstName, item.Attributes.LastName)
+		case "providers":
+			names[item.ID] = strings.TrimSpace(item.Attributes.Name)
+		}
+	}
+
+	actor := &olympusActor{
+		ID:    strings.TrimSpace(payload.Data.ID),
+		Roles: append([]string(nil), payload.Data.Attributes.Roles...),
+	}
+	if payload.Data.Relationships.Person.Data != nil {
+		actor.Name = strings.TrimSpace(names[payload.Data.Relationships.Person.Data.ID])
+	}
+	if actor.Name == "" && payload.Data.Relationships.Provider.Data != nil {
+		actor.Name = strings.TrimSpace(names[payload.Data.Relationships.Provider.Data.ID])
+	}
+	return actor, nil
 }
 
 func (c *Client) LookupAPIKeyRoles(ctx context.Context, keyID string) (*APIKeyRoleLookup, error) {

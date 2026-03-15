@@ -259,3 +259,80 @@ func TestClientListIndividualKeysParsesActors(t *testing.T) {
 		t.Fatalf("expected nickname to populate name, got %#v", keys[0])
 	}
 }
+
+func TestClientGetActorParsesRolesAndName(t *testing.T) {
+	client := &Client{
+		httpClient: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if got := r.URL.Path + "?" + r.URL.RawQuery; got != "/olympus/v1/actors/actor-1?include=provider,person" {
+				t.Fatalf("unexpected actor path %q", got)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(`{
+					"data":{
+						"id":"actor-1",
+						"attributes":{"roles":["ADMIN","CIPS"]},
+						"relationships":{
+							"provider":{"data":{"id":"prov-1"}},
+							"person":{"data":{"id":"person-1"}}
+						}
+					},
+					"included":[
+						{"type":"people","id":"person-1","attributes":{"firstName":"Mithilesh","lastName":"Chellappan"}},
+						{"type":"providers","id":"prov-1","attributes":{"name":"Mithilesh Chellappan"}}
+					]
+				}`)),
+			}, nil
+		})},
+	}
+
+	actor, err := client.getActor(context.Background(), "actor-1")
+	if err != nil {
+		t.Fatalf("getActor() error: %v", err)
+	}
+	if actor.ID != "actor-1" || actor.Name != "Mithilesh Chellappan" {
+		t.Fatalf("unexpected actor: %#v", actor)
+	}
+	if len(actor.Roles) != 2 || actor.Roles[0] != "ADMIN" {
+		t.Fatalf("unexpected actor roles: %#v", actor.Roles)
+	}
+}
+
+func TestClientListActorsParsesIncludedNames(t *testing.T) {
+	client := &Client{
+		httpClient: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(`{
+					"data":[
+						{
+							"id":"actor-1",
+							"attributes":{"roles":["ADMIN"]},
+							"relationships":{
+								"provider":{"data":{"id":"prov-1"}},
+								"person":{"data":{"id":"person-1"}}
+							}
+						}
+					],
+					"included":[
+						{"type":"people","id":"person-1","attributes":{"firstName":"Mithilesh","lastName":"Chellappan"}},
+						{"type":"providers","id":"prov-1","attributes":{"name":"Ignored Provider"}}
+					]
+				}`)),
+			}, nil
+		})},
+	}
+
+	actors, err := client.listActors(context.Background())
+	if err != nil {
+		t.Fatalf("listActors() error: %v", err)
+	}
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 actor, got %d", len(actors))
+	}
+	if actors[0].Name != "Mithilesh Chellappan" {
+		t.Fatalf("unexpected actor name: %#v", actors[0])
+	}
+}
