@@ -31,10 +31,18 @@ func (g *GitStore) Clone(ctx context.Context) error {
 		if err2 := g.gitRun(ctx, "", "clone", g.RepoURL, g.LocalDir); err2 != nil {
 			return fmt.Errorf("git clone: %w", err2)
 		}
-		// Initialize branch if empty.
+		// Ensure we're on the target branch.
 		if _, err2 := g.gitOutput(ctx, g.LocalDir, "rev-parse", "HEAD"); err2 != nil {
+			// Empty repo — create the branch.
 			if err3 := g.gitRun(ctx, g.LocalDir, "checkout", "-b", branch); err3 != nil {
 				return fmt.Errorf("git checkout -b: %w", err3)
+			}
+		} else {
+			// Non-empty repo — switch to or create the target branch.
+			if err3 := g.gitRun(ctx, g.LocalDir, "checkout", branch); err3 != nil {
+				if err4 := g.gitRun(ctx, g.LocalDir, "checkout", "-b", branch); err4 != nil {
+					return fmt.Errorf("git checkout -b %s: %w", branch, err4)
+				}
 			}
 		}
 	}
