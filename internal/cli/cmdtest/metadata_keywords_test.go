@@ -769,7 +769,9 @@ func TestMetadataKeywordsPlanBuildsKeywordOnlyRemotePlan(t *testing.T) {
 			To     string `json:"to"`
 		} `json:"updates"`
 		Warnings []struct {
+			Action        string   `json:"action"`
 			Locale        string   `json:"locale"`
+			Message       string   `json:"message"`
 			MissingFields []string `json:"missingFields"`
 		} `json:"warnings"`
 	}
@@ -782,11 +784,90 @@ func TestMetadataKeywordsPlanBuildsKeywordOnlyRemotePlan(t *testing.T) {
 	if len(payload.Updates) != 1 || payload.Updates[0].Locale != "en-US" || payload.Updates[0].From != "one,remote" || payload.Updates[0].To != "one,two" {
 		t.Fatalf("expected one en-US update, got %+v", payload.Updates)
 	}
-	if len(payload.Warnings) != 1 || payload.Warnings[0].Locale != "ja" {
+	if len(payload.Warnings) != 1 || payload.Warnings[0].Action != "create" || payload.Warnings[0].Locale != "ja" {
 		t.Fatalf("expected one ja warning, got %+v", payload.Warnings)
+	}
+	if !strings.Contains(payload.Warnings[0].Message, "create would leave locale") || !strings.Contains(payload.Warnings[0].Message, "description, supportUrl") {
+		t.Fatalf("expected create warning message with missing fields, got %+v", payload.Warnings[0])
 	}
 	if len(payload.Warnings[0].MissingFields) != 2 || payload.Warnings[0].MissingFields[0] != "description" || payload.Warnings[0].MissingFields[1] != "supportUrl" {
 		t.Fatalf("expected missing description/supportUrl warning, got %+v", payload.Warnings[0])
+	}
+}
+
+func TestMetadataKeywordsPlanDoesNotWarnForExistingLocaleUpdate(t *testing.T) {
+	setupAuth(t)
+	t.Setenv("ASC_BYPASS_KEYCHAIN", "1")
+	t.Setenv("ASC_CONFIG_PATH", filepath.Join(t.TempDir(), "nonexistent.json"))
+	t.Setenv("ASC_APP_ID", "")
+
+	dir := t.TempDir()
+	versionDir := filepath.Join(dir, "version", "1.2.3")
+	if err := os.MkdirAll(versionDir, 0o755); err != nil {
+		t.Fatalf("mkdir version dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(versionDir, "en-US.json"), []byte(`{"keywords":"one,two"}`), 0o644); err != nil {
+		t.Fatalf("write en-US file: %v", err)
+	}
+
+	originalTransport := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = originalTransport })
+	http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Method != http.MethodGet {
+			t.Fatalf("expected GET only, got %s %s", req.Method, req.URL.Path)
+		}
+		switch req.URL.Path {
+		case "/v1/apps/app-1/appStoreVersions":
+			return metadataKeywordsJSONResponse(`{"data":[{"type":"appStoreVersions","id":"version-1","attributes":{"versionString":"1.2.3","platform":"IOS"}}],"links":{"next":""}}`)
+		case "/v1/appStoreVersions/version-1/appStoreVersionLocalizations":
+			return metadataKeywordsJSONResponse(`{
+				"data":[
+					{"type":"appStoreVersionLocalizations","id":"loc-en","attributes":{"locale":"en-US","description":"Remote description","supportUrl":"https://example.com/support","keywords":"old,keywords"}}
+				],
+				"links":{"next":""}
+			}`)
+		default:
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
+			return nil, nil
+		}
+	})
+
+	root := RootCommand("1.2.3")
+	root.FlagSet.SetOutput(io.Discard)
+
+	stdout, stderr := captureOutput(t, func() {
+		if err := root.Parse([]string{
+			"metadata", "keywords", "plan",
+			"--app", "app-1",
+			"--version", "1.2.3",
+			"--dir", dir,
+		}); err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		if err := root.Run(context.Background()); err != nil {
+			t.Fatalf("run error: %v", err)
+		}
+	})
+	if stderr != "" {
+		t.Fatalf("expected empty stderr, got %q", stderr)
+	}
+
+	var payload struct {
+		Updates []struct {
+			Locale string `json:"locale"`
+			From   string `json:"from"`
+			To     string `json:"to"`
+		} `json:"updates"`
+		Warnings []struct{} `json:"warnings"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatalf("unmarshal output: %v\nstdout=%q", err, stdout)
+	}
+	if len(payload.Updates) != 1 || payload.Updates[0].Locale != "en-US" || payload.Updates[0].From != "old,keywords" || payload.Updates[0].To != "one,two" {
+		t.Fatalf("expected single en-US update, got %+v", payload.Updates)
+	}
+	if len(payload.Warnings) != 0 {
+		t.Fatalf("expected no warnings for existing-locale update, got %+v", payload.Warnings)
 	}
 }
 
@@ -998,6 +1079,7 @@ func TestMetadataKeywordsApplyCreatesLocale(t *testing.T) {
 			Locale string `json:"locale"`
 		} `json:"actions"`
 		Warnings []struct {
+			Action string `json:"action"`
 			Locale string `json:"locale"`
 		} `json:"warnings"`
 	}
@@ -1010,7 +1092,7 @@ func TestMetadataKeywordsApplyCreatesLocale(t *testing.T) {
 	if len(payload.Actions) != 1 || payload.Actions[0].Action != "create" || payload.Actions[0].Locale != "ja" {
 		t.Fatalf("expected one create action, got %+v", payload.Actions)
 	}
-	if len(payload.Warnings) != 1 || payload.Warnings[0].Locale != "ja" {
+	if len(payload.Warnings) != 1 || payload.Warnings[0].Action != "create" || payload.Warnings[0].Locale != "ja" {
 		t.Fatalf("expected one warning for ja create, got %+v", payload.Warnings)
 	}
 }

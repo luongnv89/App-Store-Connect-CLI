@@ -80,6 +80,7 @@ type MetadataKeywordsLocalizeResult struct {
 
 // MetadataKeywordsWarning highlights submit-readiness risk during keyword creates.
 type MetadataKeywordsWarning struct {
+	Action        string   `json:"action"`
 	Locale        string   `json:"locale"`
 	Message       string   `json:"message"`
 	MissingFields []string `json:"missingFields,omitempty"`
@@ -1332,9 +1333,11 @@ func buildMetadataKeywordWarnings(states map[string]keywordLocalState, remote ma
 		if len(missing) == 0 {
 			continue
 		}
+		missingCSV := strings.Join(missing, ", ")
 		warnings = append(warnings, MetadataKeywordsWarning{
+			Action:        "create",
 			Locale:        locale,
-			Message:       fmt.Sprintf("creating locale %q leaves submit-required fields missing", locale),
+			Message:       fmt.Sprintf("create would leave locale %q missing submit-required fields: %s", locale, missingCSV),
 			MissingFields: missing,
 		})
 	}
@@ -1574,7 +1577,7 @@ func printMetadataKeywordsPlanTable(result MetadataKeywordsPlanResult) error {
 	}
 	if len(result.Warnings) > 0 {
 		fmt.Println()
-		asc.RenderTable([]string{"locale", "message", "missingFields"}, buildMetadataKeywordWarningRows(result.Warnings))
+		asc.RenderTable([]string{"action", "locale", "message", "missingFields"}, buildMetadataKeywordWarningRows(result.Warnings))
 	}
 	return nil
 }
@@ -1610,7 +1613,7 @@ func printMetadataKeywordsPlanMarkdown(result MetadataKeywordsPlanResult) error 
 	}
 	if len(result.Warnings) > 0 {
 		fmt.Println()
-		asc.RenderMarkdown([]string{"locale", "message", "missingFields"}, buildMetadataKeywordWarningRows(result.Warnings))
+		asc.RenderMarkdown([]string{"action", "locale", "message", "missingFields"}, buildMetadataKeywordWarningRows(result.Warnings))
 	}
 	return nil
 }
@@ -1619,6 +1622,7 @@ func buildMetadataKeywordWarningRows(warnings []MetadataKeywordsWarning) [][]str
 	rows := make([][]string, 0, len(warnings))
 	for _, warning := range warnings {
 		rows = append(rows, []string{
+			warning.Action,
 			warning.Locale,
 			warning.Message,
 			strings.Join(warning.MissingFields, ","),
