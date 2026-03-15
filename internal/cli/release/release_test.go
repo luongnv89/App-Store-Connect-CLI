@@ -426,6 +426,66 @@ func TestExecuteRun_DryRunReadinessStepMarkedDryRun(t *testing.T) {
 	}
 }
 
+func TestExecuteRun_DryRunDefersAttachAndSubmitWhenVersionWouldBeCreated(t *testing.T) {
+	origClientFactory := releaseClientFactory
+	origMetadataExecutor := metadataPushExecutor
+	origReadinessBuilder := readinessReportBuilder
+	origTransport := http.DefaultTransport
+	t.Cleanup(func() {
+		releaseClientFactory = origClientFactory
+		metadataPushExecutor = origMetadataExecutor
+		readinessReportBuilder = origReadinessBuilder
+		http.DefaultTransport = origTransport
+	})
+
+	metadataPushExecutor = func(context.Context, metadata.PushExecutionOptions) (metadata.PushPlanResult, error) {
+		t.Fatal("metadata executor should not run when dry-run defers version creation")
+		return metadata.PushPlanResult{}, nil
+	}
+	readinessReportBuilder = func(context.Context, validatecli.ReadinessOptions) (validation.Report, error) {
+		t.Fatal("readiness builder should not run when dry-run defers version creation")
+		return validation.Report{}, nil
+	}
+
+	http.DefaultTransport = releaseRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Method == http.MethodGet && req.URL.Path == "/v1/apps/APP_123/appStoreVersions" {
+			return releaseJSONResponse(http.StatusOK, `{"data":[]}`)
+		}
+		return nil, fmt.Errorf("unexpected request: %s %s", req.Method, req.URL.Path)
+	})
+
+	testClient := newReleaseTestClient(t)
+	releaseClientFactory = func() (*asc.Client, error) { return testClient, nil }
+
+	result, err := executeRun(context.Background(), runOptions{
+		AppID:          "APP_123",
+		Version:        "9.9.9",
+		BuildID:        "BUILD_123",
+		MetadataDir:    "./metadata/version/9.9.9",
+		Platform:       "IOS",
+		Timeout:        releaseRunTimeout,
+		DryRun:         true,
+		Confirm:        false,
+		StrictValidate: false,
+		CheckpointFile: filepath.Join(t.TempDir(), "release-checkpoint.json"),
+	})
+	if err != nil {
+		t.Fatalf("executeRun error: %v", err)
+	}
+	if result.Status != "dry-run" {
+		t.Fatalf("expected status dry-run, got %q", result.Status)
+	}
+	if len(result.Steps) != 5 {
+		t.Fatalf("expected 5 steps, got %d", len(result.Steps))
+	}
+	if result.Steps[2].Name != stepAttachBuild || result.Steps[2].Message != "build attach deferred until version exists" {
+		t.Fatalf("expected attach step deferred, got %+v", result.Steps[2])
+	}
+	if result.Steps[4].Name != stepSubmitReview || result.Steps[4].Message != "submission deferred until version exists" {
+		t.Fatalf("expected submit step deferred, got %+v", result.Steps[4])
+	}
+}
+
 func TestExecuteRun_TimeoutCancelsPipeline(t *testing.T) {
 	origClientFactory := releaseClientFactory
 	origMetadataExecutor := metadataPushExecutor

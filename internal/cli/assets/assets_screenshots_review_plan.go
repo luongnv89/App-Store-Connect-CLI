@@ -2,6 +2,7 @@ package assets
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -403,9 +404,16 @@ func executeScreenshotReviewPlan(ctx context.Context, opts screenshotReviewPlanO
 
 func resolveScreenshotPlanVersion(ctx context.Context, client *asc.Client, appID, version, versionID, platform string) (string, string, string, error) {
 	if strings.TrimSpace(versionID) != "" {
-		resp, err := client.GetAppStoreVersion(ctx, strings.TrimSpace(versionID))
+		resp, err := client.GetAppStoreVersion(ctx, strings.TrimSpace(versionID), asc.WithAppStoreVersionInclude([]string{"app"}))
 		if err != nil {
 			return "", "", "", err
+		}
+		relatedAppID, err := appStoreVersionAppID(resp)
+		if err != nil {
+			return "", "", "", err
+		}
+		if !strings.EqualFold(strings.TrimSpace(relatedAppID), strings.TrimSpace(appID)) {
+			return "", "", "", fmt.Errorf("version %q belongs to app %q, not %q", strings.TrimSpace(versionID), relatedAppID, appID)
 		}
 		return strings.TrimSpace(resp.Data.ID), strings.TrimSpace(resp.Data.Attributes.VersionString), strings.TrimSpace(string(resp.Data.Attributes.Platform)), nil
 	}
@@ -415,6 +423,28 @@ func resolveScreenshotPlanVersion(ctx context.Context, client *asc.Client, appID
 		return "", "", "", err
 	}
 	return resolvedVersionID, strings.TrimSpace(version), strings.TrimSpace(platform), nil
+}
+
+func appStoreVersionAppID(resp *asc.AppStoreVersionResponse) (string, error) {
+	if resp == nil {
+		return "", fmt.Errorf("app store version response is required")
+	}
+
+	type versionRelationships struct {
+		App *asc.Relationship `json:"app"`
+	}
+
+	var relationships versionRelationships
+	if len(resp.Data.Relationships) > 0 {
+		if err := json.Unmarshal(resp.Data.Relationships, &relationships); err != nil {
+			return "", fmt.Errorf("parse app store version relationships: %w", err)
+		}
+	}
+
+	if relationships.App == nil || strings.TrimSpace(relationships.App.Data.ID) == "" {
+		return "", fmt.Errorf("app relationship missing for app store version %q", strings.TrimSpace(resp.Data.ID))
+	}
+	return strings.TrimSpace(relationships.App.Data.ID), nil
 }
 
 func resolveReviewArtifactPaths(outputDir, manifestPath, approvalPath string) (string, string, string, error) {

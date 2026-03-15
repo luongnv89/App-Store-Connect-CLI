@@ -440,6 +440,15 @@ func executeRun(ctx context.Context, opts runOptions) (runResult, error) {
 	}
 
 	if err := runStep(stepAttachBuild, "Ensure --build points to a valid processed build for this app.", func() (stepOutcome, error) {
+		if strings.TrimSpace(versionID) == "" && opts.DryRun {
+			return stepOutcome{
+				Status:  "dry-run",
+				Message: "build attach deferred until version exists",
+				Details: map[string]any{"deferred": true},
+				Persist: false,
+			}, nil
+		}
+
 		attachResult, attachErr := submitcli.EnsureBuildAttached(requestCtx, client, versionID, opts.BuildID, opts.DryRun)
 		if attachErr != nil {
 			return stepOutcome{}, attachErr
@@ -524,6 +533,15 @@ func executeRun(ctx context.Context, opts runOptions) (runResult, error) {
 	}
 
 	if err := runStep(stepSubmitReview, "Check review submission prerequisites and rerun with --confirm.", func() (stepOutcome, error) {
+		if strings.TrimSpace(versionID) == "" && opts.DryRun {
+			return stepOutcome{
+				Status:  "dry-run",
+				Message: "submission deferred until version exists",
+				Details: map[string]any{"deferred": true},
+				Persist: false,
+			}, nil
+		}
+
 		submitResult, submitErr := submitcli.SubmitResolvedVersion(requestCtx, client, submitcli.SubmitResolvedVersionOptions{
 			AppID:                    opts.AppID,
 			VersionID:                versionID,

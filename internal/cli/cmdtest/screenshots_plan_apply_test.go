@@ -226,6 +226,68 @@ func TestScreenshotsApplyUploadsApprovedArtifacts(t *testing.T) {
 	}
 }
 
+func TestScreenshotsPlanRejectsVersionIDFromDifferentApp(t *testing.T) {
+	setupAuth(t)
+	t.Setenv("ASC_CONFIG_PATH", filepath.Join(t.TempDir(), "nonexistent.json"))
+	t.Setenv("ASC_APP_ID", "")
+
+	reviewDir, _ := writeScreenshotReviewArtifacts(t)
+
+	originalTransport := http.DefaultTransport
+	t.Cleanup(func() {
+		http.DefaultTransport = originalTransport
+	})
+
+	http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/v1/appStoreVersions/version-1":
+			return statusJSONResponse(`{
+				"data":{
+					"type":"appStoreVersions",
+					"id":"version-1",
+					"attributes":{"versionString":"1.2.3","platform":"IOS"},
+					"relationships":{"app":{"data":{"type":"apps","id":"999999999"}}}
+				}
+			}`), nil
+		default:
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.String())
+			return nil, nil
+		}
+	})
+
+	root := RootCommand("1.2.3")
+	root.FlagSet.SetOutput(io.Discard)
+
+	var runErr error
+	stdout, stderr := captureOutput(t, func() {
+		if err := root.Parse([]string{
+			"screenshots", "plan",
+			"--app", "123456789",
+			"--version-id", "version-1",
+			"--review-output-dir", reviewDir,
+		}); err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		runErr = root.Run(context.Background())
+	})
+
+	if runErr == nil {
+		t.Fatal("expected version/app mismatch error")
+	}
+	if errors.Is(runErr, flag.ErrHelp) {
+		t.Fatalf("expected runtime validation error, got ErrHelp")
+	}
+	if !strings.Contains(runErr.Error(), `version "version-1" belongs to app "999999999", not "123456789"`) {
+		t.Fatalf("expected mismatch error, got %v", runErr)
+	}
+	if stdout != "" {
+		t.Fatalf("expected empty stdout, got %q", stdout)
+	}
+	if stderr != "" {
+		t.Fatalf("expected empty stderr, got %q", stderr)
+	}
+}
+
 func writeScreenshotReviewArtifacts(t *testing.T) (string, string) {
 	t.Helper()
 
