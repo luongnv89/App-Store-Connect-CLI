@@ -66,11 +66,40 @@ func TestWebAppsCreateHelpMentionsInteractiveContract(t *testing.T) {
 	}
 
 	usage := cmd.UsageFunc(cmd)
-	if !strings.Contains(usage, "interactive prompt will guide you") {
+	if !strings.Contains(usage, "interactive terminal") {
 		t.Fatalf("expected interactive contract in usage, got %q", usage)
 	}
 	if !strings.Contains(usage, "--password") {
 		t.Fatalf("expected temporary password compatibility in usage, got %q", usage)
+	}
+}
+
+func TestWebAppsCreateRequiresAppleIDWhenNoCacheAndNoTTY(t *testing.T) {
+	t.Setenv("ASC_WEB_SESSION_CACHE_BACKEND", "file")
+	t.Setenv("ASC_WEB_SESSION_CACHE_DIR", t.TempDir())
+	t.Setenv("ASC_WEB_PASSWORD", "")
+
+	root := RootCommand("1.2.3")
+	root.FlagSet.SetOutput(io.Discard)
+
+	var runErr error
+	_, stderr := captureOutput(t, func() {
+		if err := root.Parse([]string{
+			"web", "apps", "create",
+			"--name", "My App",
+			"--bundle-id", "com.example.app",
+			"--sku", "SKU123",
+		}); err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		runErr = root.Run(context.Background())
+	})
+
+	if !errors.Is(runErr, flag.ErrHelp) {
+		t.Fatalf("expected ErrHelp, got %v", runErr)
+	}
+	if !strings.Contains(stderr, "no cached web session is available") {
+		t.Fatalf("expected missing cached-session message, got %q", stderr)
 	}
 }
 

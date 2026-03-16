@@ -651,30 +651,96 @@ func readLegacyIrisLastKeyFromFile() (string, bool, error) {
 }
 
 // TODO(next-release-cycle): remove legacy IRIS session import after the apps-create deprecation window.
-func migrateLegacyIrisSessionByKey(selection backendSelection, key string) (persistedSession, bool, error) {
+func deleteLegacyIrisSessionFromFile(key string) error {
+	path, err := legacyIrisSessionFilePath(key)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func deleteLegacyIrisLastKeyFromFile() error {
+	path, err := legacyIrisLastFilePath()
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func deleteLegacyIrisSessionArtifacts(key string) error {
+	if err := deleteLegacyIrisSessionFromFile(key); err != nil {
+		return err
+	}
+	return deleteLegacyIrisLastKeyFromFile()
+}
+
+func deleteAllLegacyIrisFromFile() error {
+	dir, err := legacyIrisSessionCacheDir()
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, "session-") && strings.HasSuffix(name, ".json") || name == "last.json" {
+			if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func migrateLegacyIrisSessionByKey(ctx context.Context, selection backendSelection, key string) (*AuthSession, bool, error) {
 	if selection.backend == sessionBackendOff {
-		return persistedSession{}, false, nil
+		return nil, false, nil
 	}
 	sess, ok, err := readLegacyIrisSessionFromFile(key)
 	if err != nil || !ok {
-		return persistedSession{}, false, err
+		return nil, false, err
 	}
-	if err := persistSessionBySelection(selection, key, sess); err != nil {
-		return persistedSession{}, false, err
+
+	resumed, ok, err := resumeFromPersistedSession(ctx, sess)
+	if err != nil {
+		if errors.Is(err, ErrCachedSessionExpired) {
+			_ = deleteLegacyIrisSessionArtifacts(key)
+		}
+		return nil, false, err
 	}
-	return sess, true, nil
+	if !ok || resumed == nil {
+		return nil, false, nil
+	}
+	if err := PersistSession(resumed); err != nil {
+		return nil, false, err
+	}
+	if err := deleteLegacyIrisSessionArtifacts(key); err != nil {
+		return nil, false, err
+	}
+	return resumed, true, nil
 }
 
-func migrateLegacyIrisSessionByUsername(selection backendSelection, username string) (persistedSession, bool, error) {
-	return migrateLegacyIrisSessionByKey(selection, webSessionCacheKey(username))
+func migrateLegacyIrisSessionByUsername(ctx context.Context, selection backendSelection, username string) (*AuthSession, bool, error) {
+	return migrateLegacyIrisSessionByKey(ctx, selection, webSessionCacheKey(username))
 }
 
-func migrateLegacyIrisLastSession(selection backendSelection) (persistedSession, bool, error) {
+func migrateLegacyIrisLastSession(ctx context.Context, selection backendSelection) (*AuthSession, bool, error) {
 	key, ok, err := readLegacyIrisLastKeyFromFile()
 	if err != nil || !ok {
-		return persistedSession{}, false, err
+		return nil, false, err
 	}
-	return migrateLegacyIrisSessionByKey(selection, key)
+	return migrateLegacyIrisSessionByKey(ctx, selection, key)
 }
 
 func persistSessionBySelection(selection backendSelection, key string, sess persistedSession) error {
@@ -952,10 +1018,7 @@ func TryResumeSession(ctx context.Context, username string) (*AuthSession, bool,
 		return nil, false, err
 	}
 	if !ok {
-		sess, ok, err = migrateLegacyIrisSessionByUsername(selection, username)
-		if err != nil || !ok {
-			return nil, false, err
-		}
+		return migrateLegacyIrisSessionByUsername(ctx, selection, username)
 	}
 	resumed, ok, err := resumeFromPersistedSession(ctx, sess)
 	if err != nil || !ok || resumed == nil {
@@ -982,10 +1045,7 @@ func TryResumeLastSession(ctx context.Context) (*AuthSession, bool, error) {
 		return nil, false, err
 	}
 	if !ok {
-		sess, ok, err = migrateLegacyIrisLastSession(selection)
-		if err != nil || !ok {
-			return nil, false, err
-		}
+		return migrateLegacyIrisLastSession(ctx, selection)
 	}
 	resumed, ok, err := resumeFromPersistedSession(ctx, sess)
 	if err != nil || !ok || resumed == nil {
@@ -1004,55 +1064,69 @@ func DeleteSession(username string) error {
 	}
 	key := webSessionCacheKey(username)
 	selection := resolveBackendSelection()
+	var err error
 	switch selection.backend {
 	case sessionBackendOff:
-		return nil
+		err = nil
 	case sessionBackendKeychain:
-		if err := deleteSessionFromKeychain(key); err != nil {
-			if selection.fallbackFile && isKeyringUnavailable(err) {
-				if err := deleteSessionFromFile(key); err != nil {
-					return err
+		if deleteErr := deleteSessionFromKeychain(key); deleteErr != nil {
+			if selection.fallbackFile && isKeyringUnavailable(deleteErr) {
+				if fallbackErr := deleteSessionFromFile(key); fallbackErr != nil {
+					err = fallbackErr
+				} else {
+					err = clearLastSessionMarker()
 				}
-				return clearLastSessionMarker()
+			} else {
+				err = deleteErr
 			}
-			return err
 		}
-		return nil
 	case sessionBackendFile:
-		if err := deleteSessionFromFile(key); err != nil {
-			return err
+		if deleteErr := deleteSessionFromFile(key); deleteErr != nil {
+			err = deleteErr
+		} else {
+			err = clearLastSessionMarker()
 		}
-		return clearLastSessionMarker()
 	default:
-		return nil
+		err = nil
 	}
+	if legacyErr := deleteLegacyIrisSessionArtifacts(key); err == nil {
+		err = legacyErr
+	}
+	return err
 }
 
 // DeleteAllSessions removes all cached web sessions.
 func DeleteAllSessions() error {
 	selection := resolveBackendSelection()
+	var err error
 	switch selection.backend {
 	case sessionBackendOff:
-		return nil
+		err = nil
 	case sessionBackendKeychain:
-		if err := deleteAllFromKeychain(); err != nil {
-			if selection.fallbackFile && isKeyringUnavailable(err) {
-				if err := deleteAllFromFile(); err != nil {
-					return err
+		if deleteErr := deleteAllFromKeychain(); deleteErr != nil {
+			if selection.fallbackFile && isKeyringUnavailable(deleteErr) {
+				if fallbackErr := deleteAllFromFile(); fallbackErr != nil {
+					err = fallbackErr
+				} else {
+					err = clearLastSessionMarker()
 				}
-				return clearLastSessionMarker()
+			} else {
+				err = deleteErr
 			}
-			return err
 		}
-		return nil
 	case sessionBackendFile:
-		if err := deleteAllFromFile(); err != nil {
-			return err
+		if deleteErr := deleteAllFromFile(); deleteErr != nil {
+			err = deleteErr
+		} else {
+			err = clearLastSessionMarker()
 		}
-		return clearLastSessionMarker()
 	default:
-		return nil
+		err = nil
 	}
+	if legacyErr := deleteAllLegacyIrisFromFile(); err == nil {
+		err = legacyErr
+	}
+	return err
 }
 
 // clearLastSessionMarker clears the "last used session" pointer.

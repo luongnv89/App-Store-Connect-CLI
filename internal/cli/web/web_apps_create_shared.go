@@ -39,9 +39,18 @@ const (
 )
 
 var (
-	appCreateAskOneFn         = survey.AskOne
-	resolveAppCreateSessionFn = resolveAppCreateSession
+	appCreateAskOneFn                 = survey.AskOne
+	resolveAppCreateSessionFn         = resolveAppCreateSession
+	appCreateCanPromptInteractivelyFn = appCreateCanPromptInteractively
 )
+
+func appCreateCanPromptInteractively() bool {
+	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
+		_ = tty.Close()
+		return true
+	}
+	return termIsTerminalFn(int(os.Stdin.Fd()))
+}
 
 func trimAppsCreateRunOptions(opts AppsCreateRunOptions) AppsCreateRunOptions {
 	opts.Name = strings.TrimSpace(opts.Name)
@@ -76,6 +85,7 @@ func promptAppsCreateFields(opts *AppsCreateRunOptions) error {
 	if opts == nil {
 		return fmt.Errorf("app create options are required")
 	}
+	fullWizard := strings.TrimSpace(opts.Name) == "" && strings.TrimSpace(opts.BundleID) == "" && strings.TrimSpace(opts.SKU) == ""
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Create a new app in App Store Connect")
@@ -84,52 +94,60 @@ func promptAppsCreateFields(opts *AppsCreateRunOptions) error {
 	fmt.Fprintln(os.Stderr)
 
 	nameValue := strings.TrimSpace(opts.Name)
-	if err := appCreateAskOneFn(&survey.Input{
-		Message: "App name:",
-		Help:    "The name of your app as it will appear in App Store Connect",
-	}, &nameValue, survey.WithValidator(survey.Required)); err != nil {
-		return err
+	if nameValue == "" {
+		if err := appCreateAskOneFn(&survey.Input{
+			Message: "App name:",
+			Help:    "The name of your app as it will appear in App Store Connect",
+		}, &nameValue, survey.WithValidator(survey.Required)); err != nil {
+			return err
+		}
 	}
 
 	bundleIDValue := strings.TrimSpace(opts.BundleID)
-	if err := appCreateAskOneFn(&survey.Input{
-		Message: "Bundle ID:",
-		Help:    "The bundle identifier (for example, com.example.myapp). Must match an App ID in your developer account.",
-	}, &bundleIDValue, survey.WithValidator(survey.Required)); err != nil {
-		return err
+	if bundleIDValue == "" {
+		if err := appCreateAskOneFn(&survey.Input{
+			Message: "Bundle ID:",
+			Help:    "The bundle identifier (for example, com.example.myapp). Must match an App ID in your developer account.",
+		}, &bundleIDValue, survey.WithValidator(survey.Required)); err != nil {
+			return err
+		}
 	}
 
 	skuValue := strings.TrimSpace(opts.SKU)
-	if err := appCreateAskOneFn(&survey.Input{
-		Message: "SKU:",
-		Help:    "A unique identifier for your app used internally by Apple",
-	}, &skuValue, survey.WithValidator(survey.Required)); err != nil {
-		return err
+	if skuValue == "" {
+		if err := appCreateAskOneFn(&survey.Input{
+			Message: "SKU:",
+			Help:    "A unique identifier for your app used internally by Apple",
+		}, &skuValue, survey.WithValidator(survey.Required)); err != nil {
+			return err
+		}
 	}
 
 	localeValue := strings.TrimSpace(opts.PrimaryLocale)
-	if localeValue == "" {
-		localeValue = appCreateDefaultPrimaryLocale
-	}
-	if err := appCreateAskOneFn(&survey.Input{
-		Message: "Primary locale:",
-		Default: appCreateDefaultPrimaryLocale,
-		Help:    "The primary language for your app (for example, en-US, en-GB, de-DE)",
-	}, &localeValue); err != nil {
-		return err
-	}
-
 	platformValue := strings.TrimSpace(opts.Platform)
-	if platformValue == "" {
-		platformValue = appCreateDefaultPlatform
-	}
-	if err := appCreateAskOneFn(&survey.Select{
-		Message: "Platform:",
-		Options: []string{"IOS", "MAC_OS", "TV_OS", "UNIVERSAL"},
-		Default: platformValue,
-		Help:    "The primary platform for your app",
-	}, &platformValue); err != nil {
-		return err
+	if fullWizard {
+		if localeValue == "" {
+			localeValue = appCreateDefaultPrimaryLocale
+		}
+		if err := appCreateAskOneFn(&survey.Input{
+			Message: "Primary locale:",
+			Default: appCreateDefaultPrimaryLocale,
+			Help:    "The primary language for your app (for example, en-US, en-GB, de-DE)",
+		}, &localeValue); err != nil {
+			return err
+		}
+
+		if platformValue == "" {
+			platformValue = appCreateDefaultPlatform
+		}
+		if err := appCreateAskOneFn(&survey.Select{
+			Message: "Platform:",
+			Options: []string{"IOS", "MAC_OS", "TV_OS", "UNIVERSAL"},
+			Default: platformValue,
+			Help:    "The primary platform for your app",
+		}, &platformValue); err != nil {
+			return err
+		}
 	}
 
 	opts.Name = strings.TrimSpace(nameValue)
@@ -198,6 +216,9 @@ func resolveAppCreateSession(ctx context.Context, appleID, password, twoFactorCo
 	}
 
 	if appleID == "" {
+		if !appCreateCanPromptInteractivelyFn() {
+			return nil, "", shared.UsageError("--apple-id is required when no cached web session is available")
+		}
 		if err := promptAppsCreateAppleID(&appleID); err != nil {
 			return nil, "", err
 		}
@@ -206,6 +227,9 @@ func resolveAppCreateSession(ctx context.Context, appleID, password, twoFactorCo
 	if password == "" {
 		password = strings.TrimSpace(os.Getenv(webPasswordEnv))
 		if password == "" {
+			if !appCreateCanPromptInteractivelyFn() {
+				return nil, "", shared.UsageError("password is required: run in a terminal for an interactive prompt or set ASC_WEB_PASSWORD")
+			}
 			if err := promptAppsCreatePassword(&password); err != nil {
 				return nil, "", err
 			}
@@ -226,19 +250,22 @@ func resolveAppCreateSession(ctx context.Context, appleID, password, twoFactorCo
 func RunAppsCreate(ctx context.Context, opts AppsCreateRunOptions) error {
 	opts = trimAppsCreateRunOptions(opts)
 
-	if opts.Name == "" && opts.BundleID == "" && opts.SKU == "" {
+	missingName := opts.Name == ""
+	missingBundleID := opts.BundleID == ""
+	missingSKU := opts.SKU == ""
+	if missingName || missingBundleID || missingSKU {
+		if !appCreateCanPromptInteractivelyFn() {
+			switch {
+			case missingName:
+				return shared.UsageError("--name is required")
+			case missingBundleID:
+				return shared.UsageError("--bundle-id is required")
+			default:
+				return shared.UsageError("--sku is required")
+			}
+		}
 		if err := promptAppsCreateFields(&opts); err != nil {
 			return err
-		}
-	} else {
-		if opts.Name == "" {
-			return shared.UsageError("--name is required")
-		}
-		if opts.BundleID == "" {
-			return shared.UsageError("--bundle-id is required")
-		}
-		if opts.SKU == "" {
-			return shared.UsageError("--sku is required")
 		}
 	}
 
@@ -283,7 +310,12 @@ func RunAppsCreate(ctx context.Context, opts AppsCreateRunOptions) error {
 		return ensureBundleIDFn(requestCtx, opts.BundleID, opts.Name, opts.Platform)
 	})
 	if err != nil {
-		return fmt.Errorf("web apps create failed: bundle id preflight failed: %w", err)
+		if errors.Is(err, shared.ErrMissingAuth) {
+			fmt.Fprintln(os.Stderr, "Skipping Bundle ID preflight because official ASC API authentication is not configured.")
+			createdBundleID = false
+		} else {
+			return fmt.Errorf("web apps create failed: bundle id preflight failed: %w", err)
+		}
 	}
 	if createdBundleID {
 		fmt.Fprintf(os.Stderr, "Bundle ID %q was missing; created automatically.\n", opts.BundleID)

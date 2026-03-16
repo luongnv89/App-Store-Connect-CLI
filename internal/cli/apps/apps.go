@@ -193,7 +193,9 @@ Legacy ` + "`ASC_IRIS_SESSION_CACHE*`" + ` entries are imported into the web
 session cache automatically during the deprecation window.
 
 If flags are not provided, an interactive prompt will guide you through the required fields.
-The web-backed flow checks or creates the bundle ID automatically before app creation.
+If official ASC API authentication is available, the web-backed flow will also
+check or create the bundle ID before app creation. Otherwise it assumes the
+bundle ID already exists, matching the old Apple-ID-only contract.
 
 Examples:
   asc web apps create

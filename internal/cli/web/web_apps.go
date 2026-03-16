@@ -211,8 +211,8 @@ Create an app through Apple's internal web API using a web-session login.
 This is the canonical app-creation path for web-session based flows and is
 detached from official API-key workflows.
 
-If required fields are omitted, an interactive prompt will guide you through
-the app-creation inputs.
+If required fields are omitted in an interactive terminal, the CLI will prompt
+for the missing app-creation inputs.
 
 Authentication:
   --apple-id with one of:
@@ -220,6 +220,10 @@ Authentication:
     - ASC_WEB_PASSWORD environment variable
     - temporary --password compatibility flag during the apps-create deprecation window
   If you already have a cached web session, --apple-id can be omitted.
+
+Bundle ID preflight:
+  If official ASC API authentication is available, the CLI will check or create
+  the Bundle ID before app creation. Otherwise it assumes the Bundle ID already exists.
 
 ` + webWarningText + `
 

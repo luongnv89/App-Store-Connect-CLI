@@ -8,6 +8,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/rudrankriyam/App-Store-Connect-CLI/internal/asc"
+	"github.com/rudrankriyam/App-Store-Connect-CLI/internal/cli/shared"
 	webcore "github.com/rudrankriyam/App-Store-Connect-CLI/internal/web"
 )
 
@@ -104,15 +105,18 @@ func TestWebAppsCreateInteractiveWizardPromptsForMissingFields(t *testing.T) {
 	origNewWebClient := newWebClientFn
 	origEnsureBundleID := ensureBundleIDFn
 	origCreateWebApp := createWebAppFn
+	origCanPrompt := appCreateCanPromptInteractivelyFn
 	t.Cleanup(func() {
 		appCreateAskOneFn = origAskOne
 		resolveAppCreateSessionFn = origResolveAppCreateSession
 		newWebClientFn = origNewWebClient
 		ensureBundleIDFn = origEnsureBundleID
 		createWebAppFn = origCreateWebApp
+		appCreateCanPromptInteractivelyFn = origCanPrompt
 	})
 
 	promptOrder := []string{}
+	appCreateCanPromptInteractivelyFn = func() bool { return true }
 	appCreateAskOneFn = func(p survey.Prompt, response interface{}, _ ...survey.AskOpt) error {
 		switch prompt := p.(type) {
 		case *survey.Input:
@@ -204,6 +208,54 @@ func TestWebAppsCreateInteractiveWizardPromptsForMissingFields(t *testing.T) {
 		if promptOrder[i] != wantOrder[i] {
 			t.Fatalf("expected prompt order %v, got %v", wantOrder, promptOrder)
 		}
+	}
+}
+
+func TestWebAppsCreateSkipsBundleIDPreflightWhenOfficialAuthMissing(t *testing.T) {
+	origResolveAppCreateSession := resolveAppCreateSessionFn
+	origNewWebClient := newWebClientFn
+	origEnsureBundleID := ensureBundleIDFn
+	origCreateWebApp := createWebAppFn
+	t.Cleanup(func() {
+		resolveAppCreateSessionFn = origResolveAppCreateSession
+		newWebClientFn = origNewWebClient
+		ensureBundleIDFn = origEnsureBundleID
+		createWebAppFn = origCreateWebApp
+	})
+
+	resolveAppCreateSessionFn = func(ctx context.Context, appleID, password, twoFactorCode string) (*webcore.AuthSession, string, error) {
+		return &webcore.AuthSession{}, "cache", nil
+	}
+	newWebClientFn = func(session *webcore.AuthSession) *webcore.Client {
+		return &webcore.Client{}
+	}
+
+	createCalled := false
+	ensureBundleIDFn = func(ctx context.Context, bundleID, appName, platform string) (bool, error) {
+		return false, shared.ErrMissingAuth
+	}
+	createWebAppFn = func(ctx context.Context, client *webcore.Client, attrs webcore.AppCreateAttributes) (*webcore.AppResponse, error) {
+		createCalled = true
+		resp := &webcore.AppResponse{}
+		resp.Data.ID = "app-123"
+		return resp, nil
+	}
+
+	cmd := WebAppsCreateCommand()
+	if err := cmd.FlagSet.Parse([]string{
+		"--name", "My App",
+		"--bundle-id", "com.example.app",
+		"--sku", "SKU123",
+		"--apple-id", "user@example.com",
+	}); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	if err := cmd.Exec(context.Background(), nil); err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if !createCalled {
+		t.Fatal("expected app creation to continue when official bundle-id auth is unavailable")
 	}
 }
 
