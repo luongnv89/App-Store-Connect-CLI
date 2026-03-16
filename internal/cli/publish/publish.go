@@ -367,12 +367,20 @@ Examples:
 			}
 
 			if *submit {
-				if err := submitcli.SubmissionLocalizationPreflight(requestCtx, client, resolvedAppID, versionResp.Data.ID, normalizedPlatform); err != nil {
+				localizationCtx, localizationCancel := shared.ContextWithTimeoutDuration(ctx, timeoutValue)
+				if err := submitcli.SubmissionLocalizationPreflight(localizationCtx, client, resolvedAppID, versionResp.Data.ID, normalizedPlatform); err != nil {
+					localizationCancel()
 					return fmt.Errorf("publish appstore: %w", err)
 				}
-				submitcli.SubmissionSubscriptionPreflight(requestCtx, client, resolvedAppID)
+				localizationCancel()
 
-				submitResult, err := submitcli.SubmitResolvedVersion(requestCtx, client, submitcli.SubmitResolvedVersionOptions{
+				subscriptionCtx, subscriptionCancel := shared.ContextWithTimeoutDuration(ctx, timeoutValue)
+				submitcli.SubmissionSubscriptionPreflight(subscriptionCtx, client, resolvedAppID)
+				subscriptionCancel()
+
+				submitCtx, submitCancel := shared.ContextWithTimeoutDuration(ctx, timeoutValue)
+
+				submitResult, err := submitcli.SubmitResolvedVersion(submitCtx, client, submitcli.SubmitResolvedVersionOptions{
 					AppID:                    resolvedAppID,
 					VersionID:                versionResp.Data.ID,
 					BuildID:                  buildResp.Data.ID,
@@ -384,6 +392,7 @@ Examples:
 						fmt.Fprintln(os.Stderr, message)
 					},
 				})
+				submitCancel()
 				if err != nil {
 					return fmt.Errorf("publish appstore: %w", err)
 				}
