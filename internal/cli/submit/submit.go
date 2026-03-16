@@ -294,7 +294,10 @@ Examples:
 				applyReviewSubmissionStatus(result, &reviewSubmission.Data)
 				resolvedVersionID, err = resolveReviewSubmissionVersionID(requestCtx, client, &reviewSubmission.Data)
 				if err != nil {
-					return fmt.Errorf("submit status: %w", err)
+					if !shouldIgnoreReviewSubmissionVersionLookupError(err) {
+						return fmt.Errorf("submit status: %w", err)
+					}
+					resolvedVersionID = ""
 				}
 			} else {
 				versionResp, versionErr := client.GetAppStoreVersion(requestCtx, resolvedVersionID, asc.WithAppStoreVersionInclude([]string{"app"}))

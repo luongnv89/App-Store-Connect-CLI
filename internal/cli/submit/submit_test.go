@@ -182,6 +182,103 @@ func TestSubmitStatusCommand_ByIDUsesReviewSubmissionEndpoint(t *testing.T) {
 	}
 }
 
+func TestSubmitStatusCommand_ByIDIgnoresInaccessibleItemLookup(t *testing.T) {
+	setupSubmitAuth(t)
+
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+	}{
+		{
+			name:       "forbidden items lookup",
+			statusCode: http.StatusForbidden,
+			body:       `{"errors":[{"status":"403","code":"FORBIDDEN","title":"Forbidden"}]}`,
+		},
+		{
+			name:       "missing items lookup",
+			statusCode: http.StatusNotFound,
+			body:       `{"errors":[{"status":"404","code":"NOT_FOUND","title":"Not Found"}]}`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			originalTransport := http.DefaultTransport
+			t.Cleanup(func() {
+				http.DefaultTransport = originalTransport
+			})
+
+			requests := make([]string, 0, 3)
+			http.DefaultTransport = submitRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+				requests = append(requests, req.Method+" "+req.URL.RequestURI())
+
+				switch {
+				case req.Method == http.MethodGet && req.URL.Path == "/v1/reviewSubmissions/review-submission-123":
+					return submitJSONResponse(http.StatusOK, `{
+						"data": {
+							"type": "reviewSubmissions",
+							"id": "review-submission-123",
+							"attributes": {
+								"state": "IN_REVIEW",
+								"submittedDate": "2026-03-16T10:00:00Z"
+							}
+						}
+					}`)
+				case req.Method == http.MethodGet && req.URL.Path == "/v1/reviewSubmissions/review-submission-123/items":
+					return submitJSONResponse(test.statusCode, test.body)
+				default:
+					return nil, fmt.Errorf("unexpected request: %s %s", req.Method, req.URL.RequestURI())
+				}
+			})
+
+			cmd := SubmitStatusCommand()
+			cmd.FlagSet.SetOutput(io.Discard)
+			if err := cmd.FlagSet.Parse([]string{"--id", "review-submission-123", "--output", "json"}); err != nil {
+				t.Fatalf("failed to parse flags: %v", err)
+			}
+
+			stdout, err := captureSubmitCommandOutput(t, func() error {
+				return cmd.Exec(context.Background(), nil)
+			})
+			if err != nil {
+				t.Fatalf("expected command to succeed, got %v", err)
+			}
+
+			var result asc.AppStoreVersionSubmissionStatusResult
+			if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+				t.Fatalf("json.Unmarshal() error: %v\nstdout=%s", err, stdout)
+			}
+			if result.ID != "review-submission-123" {
+				t.Fatalf("expected review submission ID, got %q", result.ID)
+			}
+			if result.State != "IN_REVIEW" {
+				t.Fatalf("expected review submission state IN_REVIEW, got %q", result.State)
+			}
+			if result.VersionID != "" {
+				t.Fatalf("expected empty version ID when items lookup is inaccessible, got %q", result.VersionID)
+			}
+			if result.VersionString != "" {
+				t.Fatalf("expected empty version string when items lookup is inaccessible, got %q", result.VersionString)
+			}
+			if result.Platform != "" {
+				t.Fatalf("expected empty platform when items lookup is inaccessible, got %q", result.Platform)
+			}
+			if result.CreatedDate == nil || *result.CreatedDate != "2026-03-16T10:00:00Z" {
+				t.Fatalf("expected submittedDate to remain available, got %+v", result.CreatedDate)
+			}
+
+			wantRequests := []string{
+				"GET /v1/reviewSubmissions/review-submission-123",
+				"GET /v1/reviewSubmissions/review-submission-123/items?fields%5BreviewSubmissionItems%5D=appStoreVersion&limit=200",
+			}
+			if !reflect.DeepEqual(requests, wantRequests) {
+				t.Fatalf("unexpected requests: got %v want %v", requests, wantRequests)
+			}
+		})
+	}
+}
+
 func TestSubmitStatusCommand_ByVersionIDUsesReviewSubmissionsForCurrentSubmission(t *testing.T) {
 	setupSubmitAuth(t)
 
