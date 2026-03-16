@@ -48,6 +48,10 @@ var (
 	sessionExpiredWriter           io.Writer = os.Stderr
 )
 
+func webPasswordProvided(password string) bool {
+	return strings.TrimSpace(password) != ""
+}
+
 type webAuthStatus struct {
 	Authenticated bool   `json:"authenticated"`
 	Source        string `json:"source,omitempty"`
@@ -57,15 +61,18 @@ type webAuthStatus struct {
 }
 
 func readPasswordFromInput() (string, error) {
-	password := strings.TrimSpace(os.Getenv(webPasswordEnv))
-	if password != "" {
+	password := os.Getenv(webPasswordEnv)
+	if webPasswordProvided(password) {
 		return password, nil
 	}
 	password, err := promptPasswordFn()
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(password), nil
+	if !webPasswordProvided(password) {
+		return "", nil
+	}
+	return password, nil
 }
 
 func readPasswordFromTerminalFD(fd int, writer io.Writer) (string, error) {
@@ -80,7 +87,11 @@ func readPasswordFromTerminalFD(fd int, writer io.Writer) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to read password")
 	}
-	return strings.TrimSpace(string(passwordBytes)), nil
+	password := string(passwordBytes)
+	if !webPasswordProvided(password) {
+		return "", fmt.Errorf("password is required")
+	}
+	return password, nil
 }
 
 func promptPasswordInteractive() (string, error) {
@@ -248,15 +259,14 @@ func resolveSession(ctx context.Context, appleID, password, twoFactorCode string
 		return nil, "", shared.UsageError("--apple-id is required when no cached web session is available")
 	}
 
-	password = strings.TrimSpace(password)
-	if password == "" {
+	if !webPasswordProvided(password) {
 		var err error
 		password, err = readPasswordFromInput()
 		if err != nil {
 			return nil, "", err
 		}
 	}
-	if password == "" {
+	if !webPasswordProvided(password) {
 		return nil, "", shared.UsageError(fmt.Sprintf("password is required: run in a terminal for an interactive prompt or set %s", webPasswordEnvDisplay()))
 	}
 

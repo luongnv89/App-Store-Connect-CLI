@@ -29,8 +29,8 @@ func TestReadPasswordFromInput(t *testing.T) {
 		if err != nil {
 			t.Fatalf("readPasswordFromInput returned error: %v", err)
 		}
-		if password != "env-password" {
-			t.Fatalf("expected env password %q, got %q", "env-password", password)
+		if password != " env-password " {
+			t.Fatalf("expected env password %q, got %q", " env-password ", password)
 		}
 	})
 
@@ -49,6 +49,26 @@ func TestReadPasswordFromInput(t *testing.T) {
 		if !called {
 			t.Fatal("expected interactive prompt fallback to be used")
 		}
+		if password != " prompted-password " {
+			t.Fatalf("expected prompted password %q, got %q", " prompted-password ", password)
+		}
+	})
+
+	t.Run("treats whitespace-only env password as missing", func(t *testing.T) {
+		t.Setenv(webPasswordEnv, "   ")
+		called := false
+		promptPasswordFn = func() (string, error) {
+			called = true
+			return "prompted-password", nil
+		}
+
+		password, err := readPasswordFromInput()
+		if err != nil {
+			t.Fatalf("readPasswordFromInput returned error: %v", err)
+		}
+		if !called {
+			t.Fatal("expected prompt fallback when env password is whitespace-only")
+		}
 		if password != "prompted-password" {
 			t.Fatalf("expected prompted password %q, got %q", "prompted-password", password)
 		}
@@ -61,7 +81,7 @@ func TestReadPasswordFromTerminalFD(t *testing.T) {
 		termReadPasswordFn = origReadPassword
 	})
 
-	t.Run("trims interactive password and writes prompt", func(t *testing.T) {
+	t.Run("preserves interactive password bytes and writes prompt", func(t *testing.T) {
 		termReadPasswordFn = func(fd int) ([]byte, error) {
 			return []byte("  secret-pass  "), nil
 		}
@@ -71,11 +91,25 @@ func TestReadPasswordFromTerminalFD(t *testing.T) {
 		if err != nil {
 			t.Fatalf("readPasswordFromTerminalFD returned error: %v", err)
 		}
-		if password != "secret-pass" {
-			t.Fatalf("expected password %q, got %q", "secret-pass", password)
+		if password != "  secret-pass  " {
+			t.Fatalf("expected password %q, got %q", "  secret-pass  ", password)
 		}
 		if !strings.Contains(prompt.String(), "Apple Account password:") {
 			t.Fatalf("expected password prompt text, got %q", prompt.String())
+		}
+	})
+
+	t.Run("rejects whitespace-only password", func(t *testing.T) {
+		termReadPasswordFn = func(fd int) ([]byte, error) {
+			return []byte("   "), nil
+		}
+
+		_, err := readPasswordFromTerminalFD(0, &bytes.Buffer{})
+		if err == nil {
+			t.Fatal("expected error for whitespace-only password")
+		}
+		if !strings.Contains(err.Error(), "password is required") {
+			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 
@@ -501,6 +535,47 @@ func TestResolveSessionPrintsExpiredNoticeBeforePrompt(t *testing.T) {
 	}
 	if got := notice.String(); got != "Session expired.\n" {
 		t.Fatalf("expected expired notice output, got %q", got)
+	}
+}
+
+func TestResolveSessionWhitespaceOnlyPasswordFallsBackToEnv(t *testing.T) {
+	origTryResume := tryResumeSessionFn
+	origTryResumeLast := tryResumeLastFn
+	origWebLogin := webLoginFn
+	t.Cleanup(func() {
+		tryResumeSessionFn = origTryResume
+		tryResumeLastFn = origTryResumeLast
+		webLoginFn = origWebLogin
+	})
+
+	t.Setenv(webPasswordEnv, "env-secret")
+
+	tryResumeSessionFn = func(ctx context.Context, username string) (*webcore.AuthSession, bool, error) {
+		return nil, false, nil
+	}
+	tryResumeLastFn = func(ctx context.Context) (*webcore.AuthSession, bool, error) {
+		t.Fatal("did not expect last-session cache lookup when apple-id is provided")
+		return nil, false, nil
+	}
+
+	var received webcore.LoginCredentials
+	webLoginFn = func(ctx context.Context, creds webcore.LoginCredentials) (*webcore.AuthSession, error) {
+		received = creds
+		return &webcore.AuthSession{UserEmail: creds.Username}, nil
+	}
+
+	session, source, err := resolveSession(context.Background(), "user@example.com", "   ", "")
+	if err != nil {
+		t.Fatalf("resolveSession returned error: %v", err)
+	}
+	if source != "fresh" {
+		t.Fatalf("expected source %q, got %q", "fresh", source)
+	}
+	if session == nil {
+		t.Fatal("expected session")
+	}
+	if received.Password != "env-secret" {
+		t.Fatalf("expected env password fallback %q, got %q", "env-secret", received.Password)
 	}
 }
 
