@@ -148,12 +148,13 @@ func xcodeVersionBumpCommand() *ffcli.Command {
 	fs := flag.NewFlagSet("bump", flag.ExitOnError)
 
 	projectDir := fs.String("project-dir", ".", "Path to directory containing .xcodeproj")
+	target := fs.String("target", "", "Xcode target name to use when reading the current version/build in multi-target projects")
 	bumpType := fs.String("type", "", "Bump type: major, minor, patch, or build (required)")
 	output := shared.BindOutputFlags(fs)
 
 	return &ffcli.Command{
 		Name:       "bump",
-		ShortUsage: "asc xcode version bump --type TYPE [--project-dir DIR]",
+		ShortUsage: "asc xcode version bump --type TYPE [--project-dir DIR] [--target NAME]",
 		ShortHelp:  "Increment version or build number.",
 		LongHelp: `Increment the version or build number in an Xcode project.
 
@@ -163,8 +164,14 @@ Bump types:
   patch   1.2.3 → 1.2.4
   build   Increment CFBundleVersion (build number)
 
+Note:
+  --target is only used to choose which target's current version/build should be
+  read as the bump baseline in multi-target projects. The write still updates the
+  whole project, matching agvtool behavior.
+
 Examples:
   asc xcode version bump --type patch
+  asc xcode version bump --type patch --target Extension
   asc xcode version bump --type minor --project-dir ./MyApp
   asc xcode version bump --type build`,
 		FlagSet:   fs,
@@ -186,6 +193,7 @@ Examples:
 
 			result, err := runBumpVersion(ctx, localxcode.BumpVersionOptions{
 				ProjectDir: dir,
+				Target:     strings.TrimSpace(*target),
 				BumpType:   parsed,
 			})
 			if err != nil {

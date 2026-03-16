@@ -187,11 +187,9 @@ func BumpVersion(ctx context.Context, opts BumpVersionOptions) (*BumpVersionResu
 	if err := requireAgvtool(); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(opts.Target) != "" {
-		return nil, fmt.Errorf("--target is only supported by xcode version view; bump updates the whole project")
-	}
+	trimmedTarget := strings.TrimSpace(opts.Target)
 
-	current, err := GetVersion(ctx, opts.ProjectDir, "")
+	current, err := GetVersion(ctx, opts.ProjectDir, trimmedTarget)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +214,7 @@ func BumpVersion(ctx context.Context, opts BumpVersionOptions) (*BumpVersionResu
 			if _, err := runAgvtool(ctx, opts.ProjectDir, "next-version", "-all"); err != nil {
 				return nil, fmt.Errorf("failed to increment build number: %w", err)
 			}
-			updated, err := GetVersion(ctx, opts.ProjectDir, "")
+			updated, err := GetVersion(ctx, opts.ProjectDir, trimmedTarget)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read updated build number: %w", err)
 			}

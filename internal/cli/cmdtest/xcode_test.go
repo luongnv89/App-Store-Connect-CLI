@@ -31,11 +31,19 @@ func TestXcodeCommandExists(t *testing.T) {
 	if findSubcommand(root, "xcode", "version", "view") == nil {
 		t.Fatal("expected xcode version view command")
 	}
-	if findSubcommand(root, "xcode", "version", "edit") == nil {
+	editCmd := findSubcommand(root, "xcode", "version", "edit")
+	if editCmd == nil {
 		t.Fatal("expected xcode version edit command")
 	}
-	if findSubcommand(root, "xcode", "version", "bump") == nil {
+	if editCmd.FlagSet.Lookup("target") != nil {
+		t.Fatal("expected xcode version edit to omit --target")
+	}
+	bumpCmd := findSubcommand(root, "xcode", "version", "bump")
+	if bumpCmd == nil {
 		t.Fatal("expected xcode version bump command")
+	}
+	if bumpCmd.FlagSet.Lookup("target") == nil {
+		t.Fatal("expected xcode version bump to expose --target")
 	}
 	if findSubcommand(root, "xcode", "version", "get") != nil {
 		t.Fatal("expected xcode version get command to be absent")

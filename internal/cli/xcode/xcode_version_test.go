@@ -64,12 +64,51 @@ func TestXcodeVersionEditCommandOutputsResult(t *testing.T) {
 	}
 }
 
-func TestXcodeVersionWriteCommandsDoNotExposeTargetFlag(t *testing.T) {
+func TestXcodeVersionBumpCommandSupportsTargetFlag(t *testing.T) {
+	originalRunBumpVersion := runBumpVersion
+	t.Cleanup(func() {
+		runBumpVersion = originalRunBumpVersion
+	})
+
+	runBumpVersion = func(ctx context.Context, opts localxcode.BumpVersionOptions) (*localxcode.BumpVersionResult, error) {
+		if opts.Target != "Extension" {
+			t.Fatalf("expected bump target Extension, got %q", opts.Target)
+		}
+		return &localxcode.BumpVersionResult{
+			BumpType:   string(opts.BumpType),
+			OldVersion: "2.0.0",
+			NewVersion: "2.0.1",
+			ProjectDir: opts.ProjectDir,
+		}, nil
+	}
+
+	stdout, stderr, err := runXcodeVersionCommand(t, []string{
+		"bump",
+		"--project-dir", "./MyApp",
+		"--target", "Extension",
+		"--type", "patch",
+		"--output", "json",
+	})
+	if err != nil {
+		t.Fatalf("bump run error: %v", err)
+	}
+	if stderr != "" {
+		t.Fatalf("expected bump stderr to be empty, got %q", stderr)
+	}
+	if stdout == "" {
+		t.Fatal("expected JSON output from bump command")
+	}
+}
+
+func TestXcodeVersionEditCommandOmitsTargetFlag(t *testing.T) {
 	if xcodeVersionEditCommand().FlagSet.Lookup("target") != nil {
 		t.Fatal("expected edit command to omit --target")
 	}
-	if xcodeVersionBumpCommand().FlagSet.Lookup("target") != nil {
-		t.Fatal("expected bump command to omit --target")
+}
+
+func TestXcodeVersionBumpCommandExposesTargetFlag(t *testing.T) {
+	if xcodeVersionBumpCommand().FlagSet.Lookup("target") == nil {
+		t.Fatal("expected bump command to expose --target")
 	}
 }
 

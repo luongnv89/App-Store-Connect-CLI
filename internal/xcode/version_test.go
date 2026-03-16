@@ -262,25 +262,47 @@ func TestSetVersionLegacyMultiTargetUsesProjectWideWrite(t *testing.T) {
 	}
 }
 
-func TestBumpVersionRejectsTargetedWrites(t *testing.T) {
-	prevOS := runtimeGOOS
-	prevLookPath := lookPathFn
+func TestBumpVersionLegacyMultiTargetUsesTargetForRead(t *testing.T) {
+	tempDir := t.TempDir()
+	projectDir := filepath.Join(tempDir, "Project")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("mkdir project dir: %v", err)
+	}
+	logPath := filepath.Join(tempDir, "commands.log")
+
+	restore := overrideTestEnvironment(t)
 	runtimeGOOS = "darwin"
 	lookPathFn = func(file string) (string, error) {
 		return "/usr/bin/" + file, nil
 	}
-	defer func() {
-		runtimeGOOS = prevOS
-		lookPathFn = prevLookPath
-	}()
+	commandContextFn = helperCommandContext(t, logPath)
+	t.Cleanup(restore)
 
-	_, err := BumpVersion(context.Background(), BumpVersionOptions{
-		ProjectDir: ".",
-		Target:     "App",
+	result, err := BumpVersion(context.Background(), BumpVersionOptions{
+		ProjectDir: projectDir,
+		Target:     "Extension",
 		BumpType:   BumpPatch,
 	})
-	if err == nil || !strings.Contains(err.Error(), "--target is only supported by xcode version view") {
-		t.Fatalf("expected targeted write rejection, got %v", err)
+	if err != nil {
+		t.Fatalf("expected targeted bump to succeed, got %v", err)
+	}
+	if result.OldVersion != "2.0.0" || result.NewVersion != "2.0.1" {
+		t.Fatalf("expected targeted bump to use Extension version, got %#v", result)
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read helper log: %v", err)
+	}
+	logText := string(logData)
+	if !strings.Contains(logText, "agvtool|what-marketing-version|-terse1") {
+		t.Fatalf("expected marketing version probe, got %q", logText)
+	}
+	if !strings.Contains(logText, "agvtool|what-version|-terse") {
+		t.Fatalf("expected build-number probe for current version read, got %q", logText)
+	}
+	if !strings.Contains(logText, "agvtool|new-marketing-version|2.0.1") {
+		t.Fatalf("expected targeted bump to write the Extension-derived version, got %q", logText)
 	}
 }
 
