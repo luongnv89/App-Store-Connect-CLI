@@ -46,8 +46,9 @@ const (
 )
 
 type backendSelection struct {
-	backend      sessionBackend
-	fallbackFile bool
+	backend          sessionBackend
+	fallbackFile     bool
+	fallbackKeychain bool
 }
 
 type persistedSession struct {
@@ -125,9 +126,11 @@ func resolveBackendSelection() backendSelection {
 	case "keychain":
 		return backendSelection{backend: sessionBackendKeychain}
 	case "", "auto":
-		return backendSelection{backend: sessionBackendKeychain, fallbackFile: true}
+		// Default to file-backed web sessions so successful logins can be reused
+		// without recurring per-binary keychain approval prompts.
+		return backendSelection{backend: sessionBackendFile, fallbackKeychain: true}
 	default:
-		return backendSelection{backend: sessionBackendKeychain, fallbackFile: true}
+		return backendSelection{backend: sessionBackendFile, fallbackKeychain: true}
 	}
 }
 
@@ -789,7 +792,15 @@ func readSessionBySelection(selection backendSelection, key string) (persistedSe
 		}
 		return sess, ok, nil
 	case sessionBackendFile:
-		return readSessionFromFile(key)
+		sess, ok, err := readSessionFromFile(key)
+		if err != nil || ok || !selection.fallbackKeychain {
+			return sess, ok, err
+		}
+		sess, ok, err = readSessionFromKeychain(key)
+		if err != nil {
+			return persistedSession{}, false, nil
+		}
+		return sess, ok, nil
 	default:
 		return persistedSession{}, false, nil
 	}
@@ -834,10 +845,20 @@ func readLastSessionBySelection(selection backendSelection) (persistedSession, b
 		return sess, ok, nil
 	case sessionBackendFile:
 		key, ok, err := readLastKeyFromFile()
-		if err != nil || !ok {
+		if err == nil && ok {
+			return readSessionFromFile(key)
+		}
+		if err != nil {
 			return persistedSession{}, false, err
 		}
-		return readSessionFromFile(key)
+		if !selection.fallbackKeychain {
+			return persistedSession{}, false, nil
+		}
+		sess, ok, err := readLastSessionFromKeychain()
+		if err != nil {
+			return persistedSession{}, false, nil
+		}
+		return sess, ok, nil
 	default:
 		return persistedSession{}, false, nil
 	}
@@ -1097,7 +1118,10 @@ func DeleteSession(username string) error {
 		if deleteErr := deleteSessionFromFile(key); deleteErr != nil {
 			err = deleteErr
 		} else {
-			err = clearLastSessionMarker()
+			err = clearLastKeyInFile()
+		}
+		if selection.fallbackKeychain {
+			err = joinDeleteErrors(err, deleteSessionFromKeychain(key))
 		}
 	default:
 		err = nil
@@ -1128,7 +1152,10 @@ func DeleteAllSessions() error {
 		if deleteErr := deleteAllFromFile(); deleteErr != nil {
 			err = deleteErr
 		} else {
-			err = clearLastSessionMarker()
+			err = clearLastKeyInFile()
+		}
+		if selection.fallbackKeychain {
+			err = joinDeleteErrors(err, deleteAllFromKeychain())
 		}
 	default:
 		err = nil
@@ -1161,7 +1188,11 @@ func clearLastSessionMarker() error {
 		}
 		return nil
 	case sessionBackendFile:
-		return clearLastKeyInFile()
+		err := clearLastKeyInFile()
+		if selection.fallbackKeychain {
+			err = joinDeleteErrors(err, clearLastKeyInKeychain())
+		}
+		return err
 	default:
 		return nil
 	}

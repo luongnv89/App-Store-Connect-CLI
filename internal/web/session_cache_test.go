@@ -80,6 +80,175 @@ func withSessionInfoStub(t *testing.T) {
 	})
 }
 
+func TestResolveBackendSelectionDefaultsToFileWithKeychainFallback(t *testing.T) {
+	t.Setenv(webSessionCacheEnabledEnv, "1")
+	t.Setenv(webSessionBackendEnv, "")
+
+	selection := resolveBackendSelection()
+	if selection.backend != sessionBackendFile {
+		t.Fatalf("expected default backend %v, got %v", sessionBackendFile, selection.backend)
+	}
+	if !selection.fallbackKeychain {
+		t.Fatal("expected default backend to fall back to keychain")
+	}
+	if selection.fallbackFile {
+		t.Fatal("did not expect default file backend to fall back to file")
+	}
+}
+
+func TestPersistSessionDefaultBackendWritesFileWithoutKeychain(t *testing.T) {
+	kr := withArraySessionKeyring(t)
+	t.Setenv(webSessionCacheEnabledEnv, "1")
+	t.Setenv(webSessionBackendEnv, "")
+	t.Setenv(webSessionCacheDirEnv, filepath.Join(t.TempDir(), "web-cache"))
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New error: %v", err)
+	}
+	targetURL, _ := url.Parse("https://appstoreconnect.apple.com/")
+	jar.SetCookies(targetURL, []*http.Cookie{
+		{Name: "myacinfo", Value: "file-token", Path: "/", Expires: time.Now().Add(24 * time.Hour)},
+	})
+
+	if err := PersistSession(&AuthSession{
+		Client:    &http.Client{Jar: jar},
+		UserEmail: "user@example.com",
+	}); err != nil {
+		t.Fatalf("PersistSession error: %v", err)
+	}
+
+	keys, err := kr.Keys()
+	if err != nil {
+		t.Fatalf("keyring keys error: %v", err)
+	}
+	if len(keys) != 0 {
+		t.Fatalf("expected default backend not to write keychain entries, got %#v", keys)
+	}
+
+	if _, ok, err := readSessionFromFile(webSessionCacheKey("user@example.com")); err != nil {
+		t.Fatalf("readSessionFromFile error: %v", err)
+	} else if !ok {
+		t.Fatal("expected default backend to persist a file-backed session")
+	}
+}
+
+func TestTryResumeSessionDefaultBackendPrefersFileWithoutKeychain(t *testing.T) {
+	kr := withArraySessionKeyring(t)
+	withSessionInfoStub(t)
+	t.Setenv(webSessionCacheEnabledEnv, "1")
+	t.Setenv(webSessionBackendEnv, "")
+	t.Setenv(webSessionCacheDirEnv, filepath.Join(t.TempDir(), "web-cache"))
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New error: %v", err)
+	}
+	targetURL, _ := url.Parse("https://appstoreconnect.apple.com/")
+	jar.SetCookies(targetURL, []*http.Cookie{
+		{Name: "myacinfo", Value: "file-token", Path: "/", Expires: time.Now().Add(24 * time.Hour)},
+	})
+
+	if err := PersistSession(&AuthSession{
+		Client:    &http.Client{Jar: jar},
+		UserEmail: "user@example.com",
+	}); err != nil {
+		t.Fatalf("PersistSession error: %v", err)
+	}
+
+	kr.ResetCounts()
+	resumed, ok, err := TryResumeSession(context.Background(), "user@example.com")
+	if err != nil {
+		t.Fatalf("TryResumeSession error: %v", err)
+	}
+	if !ok || resumed == nil {
+		t.Fatal("expected resumed session")
+	}
+	if got := kr.GetCount(webSessionStoreItem); got != 0 {
+		t.Fatalf("expected file-backed resume to avoid keychain reads, got %d store gets", got)
+	}
+}
+
+func TestTryResumeSessionDefaultBackendFallsBackToKeychainAndPersistsFile(t *testing.T) {
+	withArraySessionKeyring(t)
+	withSessionInfoStub(t)
+	t.Setenv(webSessionCacheEnabledEnv, "1")
+	t.Setenv(webSessionBackendEnv, "")
+	t.Setenv(webSessionCacheDirEnv, filepath.Join(t.TempDir(), "web-cache"))
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New error: %v", err)
+	}
+	targetURL, _ := url.Parse("https://appstoreconnect.apple.com/")
+	jar.SetCookies(targetURL, []*http.Cookie{
+		{Name: "myacinfo", Value: "keychain-token", Path: "/", Expires: time.Now().Add(24 * time.Hour)},
+	})
+
+	key := webSessionCacheKey("user@example.com")
+	if err := writeSessionToKeychain(key, serializeCookieJar(jar)); err != nil {
+		t.Fatalf("writeSessionToKeychain error: %v", err)
+	}
+
+	resumed, ok, err := TryResumeSession(context.Background(), "user@example.com")
+	if err != nil {
+		t.Fatalf("TryResumeSession error: %v", err)
+	}
+	if !ok || resumed == nil {
+		t.Fatal("expected resumed keychain-backed session")
+	}
+
+	if _, ok, err := readSessionFromFile(key); err != nil {
+		t.Fatalf("readSessionFromFile error: %v", err)
+	} else if !ok {
+		t.Fatal("expected keychain fallback resume to repersist into file cache")
+	}
+}
+
+func TestDeleteSessionDefaultBackendRemovesFileAndKeychain(t *testing.T) {
+	withArraySessionKeyring(t)
+	t.Setenv(webSessionCacheEnabledEnv, "1")
+	t.Setenv(webSessionBackendEnv, "")
+	t.Setenv(webSessionCacheDirEnv, filepath.Join(t.TempDir(), "web-cache"))
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New error: %v", err)
+	}
+	targetURL, _ := url.Parse("https://appstoreconnect.apple.com/")
+	jar.SetCookies(targetURL, []*http.Cookie{
+		{Name: "myacinfo", Value: "shared-token", Path: "/", Expires: time.Now().Add(24 * time.Hour)},
+	})
+
+	session := &AuthSession{
+		Client:    &http.Client{Jar: jar},
+		UserEmail: "user@example.com",
+	}
+	if err := PersistSession(session); err != nil {
+		t.Fatalf("PersistSession error: %v", err)
+	}
+
+	key := webSessionCacheKey("user@example.com")
+	if err := writeSessionToKeychain(key, serializeCookieJar(jar)); err != nil {
+		t.Fatalf("writeSessionToKeychain error: %v", err)
+	}
+
+	if err := DeleteSession("user@example.com"); err != nil {
+		t.Fatalf("DeleteSession error: %v", err)
+	}
+
+	if _, ok, err := readSessionFromFile(key); err != nil {
+		t.Fatalf("readSessionFromFile error: %v", err)
+	} else if ok {
+		t.Fatal("expected file-backed session to be removed")
+	}
+	if _, ok, err := readSessionFromKeychain(key); err != nil {
+		t.Fatalf("readSessionFromKeychain error: %v", err)
+	} else if ok {
+		t.Fatal("expected keychain-backed session to be removed")
+	}
+}
+
 func TestHydrateCookieJarSkipsExpiredCookies(t *testing.T) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
