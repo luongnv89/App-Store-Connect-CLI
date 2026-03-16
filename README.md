@@ -307,11 +307,12 @@ MIT License - see [LICENSE](LICENSE) for details.
 ---
 
 <p align="center">
+  <img src="docs/images/codex-logo.png" alt="Codex logo" width="24" height="24" />
   <img src="https://cursor.com/marketing-static/icon-192x192.png" alt="Cursor logo" width="24" height="24" />
 </p>
 
 <p align="center">
-  Built with Cursor
+  Built with Codex &amp; Cursor using GPT-5.3-Codex and GPT-5.4
 </p>
 
 <p align="center">
