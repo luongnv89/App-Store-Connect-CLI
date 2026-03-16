@@ -12,6 +12,12 @@ import (
 	localxcode "github.com/rudrankriyam/App-Store-Connect-CLI/internal/xcode"
 )
 
+var (
+	runGetVersion  = localxcode.GetVersion
+	runSetVersion  = localxcode.SetVersion
+	runBumpVersion = localxcode.BumpVersion
+)
+
 // XcodeVersionCommand returns the xcode version command group.
 func XcodeVersionCommand() *ffcli.Command {
 	fs := flag.NewFlagSet("version", flag.ExitOnError)
@@ -26,11 +32,11 @@ Requires Apple Generic Versioning to be enabled in the Xcode project.
 macOS only.
 
 Examples:
-  asc xcode version get
-  asc xcode version get --project-dir ./MyApp
-  asc xcode version set --version "1.3.0"
-  asc xcode version set --build-number "42"
-  asc xcode version set --version "1.3.0" --build-number "42"
+  asc xcode version view
+  asc xcode version view --project-dir ./MyApp
+  asc xcode version edit --version "1.3.0"
+  asc xcode version edit --build-number "42"
+  asc xcode version edit --version "1.3.0" --build-number "42"
   asc xcode version bump --type patch
   asc xcode version bump --type minor
   asc xcode version bump --type major
@@ -38,8 +44,8 @@ Examples:
 		FlagSet:   fs,
 		UsageFunc: shared.DefaultUsageFunc,
 		Subcommands: []*ffcli.Command{
-			xcodeVersionGetCommand(),
-			xcodeVersionSetCommand(),
+			xcodeVersionViewCommand(),
+			xcodeVersionEditCommand(),
 			xcodeVersionBumpCommand(),
 		},
 		Exec: func(ctx context.Context, args []string) error {
@@ -48,17 +54,17 @@ Examples:
 	}
 }
 
-func xcodeVersionGetCommand() *ffcli.Command {
-	fs := flag.NewFlagSet("get", flag.ExitOnError)
+func xcodeVersionViewCommand() *ffcli.Command {
+	fs := flag.NewFlagSet("view", flag.ExitOnError)
 
 	projectDir := fs.String("project-dir", ".", "Path to directory containing .xcodeproj")
 	target := fs.String("target", "", "Xcode target name (for multi-target projects)")
 	output := shared.BindOutputFlags(fs)
 
 	return &ffcli.Command{
-		Name:       "get",
-		ShortUsage: "asc xcode version get [--project-dir DIR]",
-		ShortHelp:  "Read current version and build number.",
+		Name:       "view",
+		ShortUsage: "asc xcode version view [--project-dir DIR]",
+		ShortHelp:  "View current version and build number.",
 		FlagSet:    fs,
 		UsageFunc:  shared.DefaultUsageFunc,
 		Exec: func(ctx context.Context, args []string) error {
@@ -71,9 +77,9 @@ func xcodeVersionGetCommand() *ffcli.Command {
 				dir = "."
 			}
 
-			result, err := localxcode.GetVersion(ctx, dir, strings.TrimSpace(*target))
+			result, err := runGetVersion(ctx, dir, strings.TrimSpace(*target))
 			if err != nil {
-				return fmt.Errorf("xcode version get: %w", err)
+				return fmt.Errorf("xcode version view: %w", err)
 			}
 
 			return shared.PrintOutputWithRenderers(
@@ -94,19 +100,18 @@ func xcodeVersionGetCommand() *ffcli.Command {
 	}
 }
 
-func xcodeVersionSetCommand() *ffcli.Command {
-	fs := flag.NewFlagSet("set", flag.ExitOnError)
+func xcodeVersionEditCommand() *ffcli.Command {
+	fs := flag.NewFlagSet("edit", flag.ExitOnError)
 
 	projectDir := fs.String("project-dir", ".", "Path to directory containing .xcodeproj")
-	target := fs.String("target", "", "Xcode target name (for multi-target projects)")
 	version := fs.String("version", "", "Marketing version (CFBundleShortVersionString)")
 	buildNumber := fs.String("build-number", "", "Build number (CFBundleVersion)")
 	output := shared.BindOutputFlags(fs)
 
 	return &ffcli.Command{
-		Name:       "set",
-		ShortUsage: "asc xcode version set [--version VER] [--build-number NUM] [--project-dir DIR] [--target TARGET]",
-		ShortHelp:  "Set version and/or build number.",
+		Name:       "edit",
+		ShortUsage: "asc xcode version edit [--version VER] [--build-number NUM] [--project-dir DIR]",
+		ShortHelp:  "Edit version and/or build number.",
 		FlagSet:    fs,
 		UsageFunc:  shared.DefaultUsageFunc,
 		Exec: func(ctx context.Context, args []string) error {
@@ -125,14 +130,13 @@ func xcodeVersionSetCommand() *ffcli.Command {
 				dir = "."
 			}
 
-			result, err := localxcode.SetVersion(ctx, localxcode.SetVersionOptions{
+			result, err := runSetVersion(ctx, localxcode.SetVersionOptions{
 				ProjectDir:  dir,
-				Target:      strings.TrimSpace(*target),
 				Version:     v,
 				BuildNumber: b,
 			})
 			if err != nil {
-				return fmt.Errorf("xcode version set: %w", err)
+				return fmt.Errorf("xcode version edit: %w", err)
 			}
 
 			return shared.PrintOutput(result, *output.Output, *output.Pretty)
@@ -144,13 +148,12 @@ func xcodeVersionBumpCommand() *ffcli.Command {
 	fs := flag.NewFlagSet("bump", flag.ExitOnError)
 
 	projectDir := fs.String("project-dir", ".", "Path to directory containing .xcodeproj")
-	target := fs.String("target", "", "Xcode target name (for multi-target projects)")
 	bumpType := fs.String("type", "", "Bump type: major, minor, patch, or build (required)")
 	output := shared.BindOutputFlags(fs)
 
 	return &ffcli.Command{
 		Name:       "bump",
-		ShortUsage: "asc xcode version bump --type TYPE [--project-dir DIR] [--target TARGET]",
+		ShortUsage: "asc xcode version bump --type TYPE [--project-dir DIR]",
 		ShortHelp:  "Increment version or build number.",
 		LongHelp: `Increment the version or build number in an Xcode project.
 
@@ -181,9 +184,8 @@ Examples:
 				dir = "."
 			}
 
-			result, err := localxcode.BumpVersion(ctx, localxcode.BumpVersionOptions{
+			result, err := runBumpVersion(ctx, localxcode.BumpVersionOptions{
 				ProjectDir: dir,
-				Target:     strings.TrimSpace(*target),
 				BumpType:   parsed,
 			})
 			if err != nil {

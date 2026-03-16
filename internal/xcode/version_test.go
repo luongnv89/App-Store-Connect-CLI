@@ -135,24 +135,98 @@ func TestIncrementBuildString(t *testing.T) {
 func TestParseAgvtoolVersionOutput_TargetFilter(t *testing.T) {
 	multiTargetOutput := "App=1.2.3\nExtension=2.0.0\n"
 
-	tests := []struct {
-		name   string
-		target string
-		want   string
-	}{
-		{"no target uses first", "", "1.2.3"},
-		{"match App", "App", "1.2.3"},
-		{"match Extension", "Extension", "2.0.0"},
-		{"no match falls back to first", "Missing", "1.2.3"},
+	got, err := parseAgvtoolVersionOutput(multiTargetOutput, "Extension")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
+	if got != "2.0.0" {
+		t.Fatalf("expected Extension version, got %q", got)
+	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := parseAgvtoolVersionOutput(multiTargetOutput, tt.target)
-			if got != tt.want {
-				t.Errorf("parseAgvtoolVersionOutput(%q, %q) = %q, want %q", multiTargetOutput, tt.target, got, tt.want)
-			}
-		})
+func TestParseAgvtoolVersionOutput_RequiresTargetForAmbiguousOutput(t *testing.T) {
+	_, err := parseAgvtoolVersionOutput("App=1.2.3\nExtension=2.0.0\n", "")
+	if err == nil || !strings.Contains(err.Error(), "use --target") {
+		t.Fatalf("expected ambiguous target error, got %v", err)
+	}
+}
+
+func TestParseAgvtoolVersionOutput_MissingTargetErrors(t *testing.T) {
+	_, err := parseAgvtoolVersionOutput("App=1.2.3\nExtension=2.0.0\n", "Widget")
+	if err == nil || !strings.Contains(err.Error(), `target "Widget" not found`) {
+		t.Fatalf("expected missing target error, got %v", err)
+	}
+}
+
+func TestParseAgvtoolBuildOutput_TargetFilter(t *testing.T) {
+	got, err := parseAgvtoolBuildOutput("App=41\nExtension=7\n", "App")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "41" {
+		t.Fatalf("expected App build number, got %q", got)
+	}
+}
+
+func TestBuildSettingsTargetNames(t *testing.T) {
+	output := `
+Build settings for action build and target App:
+    MARKETING_VERSION = 1.2.3
+
+Build settings for action build and target App:
+    CURRENT_PROJECT_VERSION = 42
+
+Build settings for action build and target Extension:
+    MARKETING_VERSION = 2.0.0
+`
+
+	targets := buildSettingsTargetNames(output)
+	if len(targets) != 2 || targets[0] != "App" || targets[1] != "Extension" {
+		t.Fatalf("expected target names [App Extension], got %v", targets)
+	}
+}
+
+func TestSetVersionRejectsTargetedWrites(t *testing.T) {
+	prevOS := runtimeGOOS
+	prevLookPath := lookPathFn
+	runtimeGOOS = "darwin"
+	lookPathFn = func(file string) (string, error) {
+		return "/usr/bin/" + file, nil
+	}
+	defer func() {
+		runtimeGOOS = prevOS
+		lookPathFn = prevLookPath
+	}()
+
+	_, err := SetVersion(context.Background(), SetVersionOptions{
+		ProjectDir: ".",
+		Target:     "App",
+		Version:    "1.2.3",
+	})
+	if err == nil || !strings.Contains(err.Error(), "--target is only supported by xcode version view") {
+		t.Fatalf("expected targeted write rejection, got %v", err)
+	}
+}
+
+func TestBumpVersionRejectsTargetedWrites(t *testing.T) {
+	prevOS := runtimeGOOS
+	prevLookPath := lookPathFn
+	runtimeGOOS = "darwin"
+	lookPathFn = func(file string) (string, error) {
+		return "/usr/bin/" + file, nil
+	}
+	defer func() {
+		runtimeGOOS = prevOS
+		lookPathFn = prevLookPath
+	}()
+
+	_, err := BumpVersion(context.Background(), BumpVersionOptions{
+		ProjectDir: ".",
+		Target:     "App",
+		BumpType:   BumpPatch,
+	})
+	if err == nil || !strings.Contains(err.Error(), "--target is only supported by xcode version view") {
+		t.Fatalf("expected targeted write rejection, got %v", err)
 	}
 }
 

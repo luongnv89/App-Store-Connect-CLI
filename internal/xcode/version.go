@@ -97,8 +97,14 @@ func GetVersion(ctx context.Context, projectDir, target string) (*VersionInfo, e
 	}
 
 	trimmedTarget := strings.TrimSpace(target)
-	parsedVersion := parseAgvtoolVersionOutput(version, trimmedTarget)
-	parsedBuild := parseAgvtoolBuildOutput(buildNumber)
+	parsedVersion, err := parseAgvtoolVersionOutput(version, trimmedTarget)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse marketing version: %w", err)
+	}
+	parsedBuild, err := parseAgvtoolBuildOutput(buildNumber, trimmedTarget)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse build number: %w", err)
+	}
 	modern := isVariableReference(parsedVersion)
 
 	// Modern project: agvtool returns $(MARKETING_VERSION). Resolve via xcodebuild.
@@ -132,20 +138,19 @@ func SetVersion(ctx context.Context, opts SetVersionOptions) (*SetVersionResult,
 	if err := requireAgvtool(); err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(opts.Target) != "" {
+		return nil, fmt.Errorf("--target is only supported by xcode version view; edit updates the whole project")
+	}
 
 	result := &SetVersionResult{ProjectDir: opts.ProjectDir}
 
 	// Detect modern project by reading current version — reuses GetVersion
 	// instead of a separate agvtool call.
-	current, err := GetVersion(ctx, opts.ProjectDir, opts.Target)
+	current, err := GetVersion(ctx, opts.ProjectDir, "")
 	if err != nil {
 		return nil, err
 	}
 	modern := current.Modern
-
-	if modern && strings.TrimSpace(opts.Target) != "" {
-		fmt.Fprintf(os.Stderr, "Note: --target scopes reads; writes update all targets in project.pbxproj\n")
-	}
 
 	if v := strings.TrimSpace(opts.Version); v != "" {
 		if modern {
@@ -184,8 +189,11 @@ func BumpVersion(ctx context.Context, opts BumpVersionOptions) (*BumpVersionResu
 	if err := requireAgvtool(); err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(opts.Target) != "" {
+		return nil, fmt.Errorf("--target is only supported by xcode version view; bump updates the whole project")
+	}
 
-	current, err := GetVersion(ctx, opts.ProjectDir, opts.Target)
+	current, err := GetVersion(ctx, opts.ProjectDir, "")
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +218,7 @@ func BumpVersion(ctx context.Context, opts BumpVersionOptions) (*BumpVersionResu
 			if _, err := runAgvtool(ctx, opts.ProjectDir, "next-version", "-all"); err != nil {
 				return nil, fmt.Errorf("failed to increment build number: %w", err)
 			}
-			updated, err := GetVersion(ctx, opts.ProjectDir, opts.Target)
+			updated, err := GetVersion(ctx, opts.ProjectDir, "")
 			if err != nil {
 				return nil, fmt.Errorf("failed to read updated build number: %w", err)
 			}
@@ -282,11 +290,12 @@ func readBuildSettings(ctx context.Context, projectDir, target string) (map[stri
 		return nil, err
 	}
 
-	args := []string{"-showBuildSettings", "-project", xcodeproj}
+	args := []string{"-showBuildSettings", "-project", filepath.Base(xcodeproj)}
 	if t := strings.TrimSpace(target); t != "" {
 		args = append(args, "-target", t)
 	}
 	cmd := commandContextFn(ctx, "xcodebuild", args...)
+	cmd.Dir = projectDir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -299,8 +308,16 @@ func readBuildSettings(ctx context.Context, projectDir, target string) (map[stri
 		return nil, err
 	}
 
+	buildSettingsOutput := stdout.String()
+	if strings.TrimSpace(target) == "" {
+		targets := buildSettingsTargetNames(buildSettingsOutput)
+		if len(targets) > 1 {
+			return nil, fmt.Errorf("multiple Xcode targets found in build settings (%s); use --target", strings.Join(targets, ", "))
+		}
+	}
+
 	settings := make(map[string]string)
-	for _, line := range strings.Split(stdout.String(), "\n") {
+	for _, line := range strings.Split(buildSettingsOutput, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if idx := strings.Index(trimmed, " = "); idx > 0 {
 			key := strings.TrimSpace(trimmed[:idx])
@@ -313,6 +330,31 @@ func readBuildSettings(ctx context.Context, projectDir, target string) (map[stri
 		}
 	}
 	return settings, nil
+}
+
+func buildSettingsTargetNames(output string) []string {
+	seen := make(map[string]struct{})
+	var targets []string
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "Build settings for action ") || !strings.HasSuffix(trimmed, ":") {
+			continue
+		}
+		idx := strings.LastIndex(trimmed, " target ")
+		if idx < 0 {
+			continue
+		}
+		target := strings.TrimSpace(strings.TrimSuffix(trimmed[idx+len(" target "):], ":"))
+		if target == "" {
+			continue
+		}
+		if _, exists := seen[target]; exists {
+			continue
+		}
+		seen[target] = struct{}{}
+		targets = append(targets, target)
+	}
+	return targets
 }
 
 // findXcodeproj finds the .xcodeproj directory in a project dir.
@@ -394,43 +436,73 @@ func isVariableReference(value string) bool {
 
 // parseAgvtoolVersionOutput extracts the version from agvtool output.
 // `agvtool what-marketing-version -terse1` outputs lines like "=1.2.3" or "TargetName=1.2.3".
-// When target is non-empty, looks for a line matching "target=" prefix.
-func parseAgvtoolVersionOutput(output, target string) string {
+func parseAgvtoolVersionOutput(output, target string) (string, error) {
+	return parseAgvtoolValueOutput(output, target)
+}
+
+// parseAgvtoolBuildOutput extracts the build number from agvtool output.
+// `agvtool what-version -terse` outputs just the number or target-scoped lines.
+func parseAgvtoolBuildOutput(output, target string) (string, error) {
+	return parseAgvtoolValueOutput(output, target)
+}
+
+func parseAgvtoolValueOutput(output, target string) (string, error) {
 	lines := strings.Split(output, "\n")
+	trimmedTarget := strings.TrimSpace(target)
 
-	// If target specified, look for its line first.
-	if target != "" {
-		prefix := target + "="
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, prefix) {
-				return strings.TrimSpace(line[len(prefix):])
-			}
-		}
-	}
+	var fallback string
+	seenTargets := make(map[string]struct{})
+	var targetNames []string
 
-	// Fallback: first non-empty line.
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		if idx := strings.LastIndex(line, "="); idx >= 0 {
-			return strings.TrimSpace(line[idx+1:])
+		if idx := strings.Index(line, "="); idx >= 0 {
+			name := strings.TrimSpace(line[:idx])
+			value := strings.TrimSpace(line[idx+1:])
+			if name != "" {
+				if trimmedTarget != "" && name == trimmedTarget {
+					return value, nil
+				}
+				if _, exists := seenTargets[name]; !exists {
+					seenTargets[name] = struct{}{}
+					targetNames = append(targetNames, name)
+				}
+				continue
+			}
+			if fallback == "" {
+				fallback = value
+			}
+			continue
 		}
-		return line
+		if fallback == "" {
+			fallback = line
+		}
 	}
-	return strings.TrimSpace(output)
-}
 
-// parseAgvtoolBuildOutput extracts the build number from agvtool output.
-// `agvtool what-version -terse` outputs just the number.
-func parseAgvtoolBuildOutput(output string) string {
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	if len(lines) == 0 {
-		return ""
+	if trimmedTarget != "" {
+		if len(targetNames) > 0 {
+			return "", fmt.Errorf("target %q not found in agvtool output", trimmedTarget)
+		}
+		return fallback, nil
 	}
-	return strings.TrimSpace(lines[len(lines)-1])
+
+	if len(targetNames) > 1 {
+		return "", fmt.Errorf("multiple target values found (%s); use --target", strings.Join(targetNames, ", "))
+	}
+	if len(targetNames) == 1 {
+		prefix := targetNames[0] + "="
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, prefix) {
+				return strings.TrimSpace(line[len(prefix):]), nil
+			}
+		}
+	}
+
+	return fallback, nil
 }
 
 // bumpVersionString increments a semver-style version string.

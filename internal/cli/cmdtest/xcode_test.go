@@ -25,6 +25,53 @@ func TestXcodeCommandExists(t *testing.T) {
 	if findSubcommand(root, "xcode", "export") == nil {
 		t.Fatal("expected xcode export command")
 	}
+	if findSubcommand(root, "xcode", "version") == nil {
+		t.Fatal("expected xcode version command")
+	}
+	if findSubcommand(root, "xcode", "version", "view") == nil {
+		t.Fatal("expected xcode version view command")
+	}
+	if findSubcommand(root, "xcode", "version", "edit") == nil {
+		t.Fatal("expected xcode version edit command")
+	}
+	if findSubcommand(root, "xcode", "version", "bump") == nil {
+		t.Fatal("expected xcode version bump command")
+	}
+	if findSubcommand(root, "xcode", "version", "get") != nil {
+		t.Fatal("expected xcode version get command to be absent")
+	}
+	if findSubcommand(root, "xcode", "version", "set") != nil {
+		t.Fatal("expected xcode version set command to be absent")
+	}
+}
+
+func TestXcodeVersionHelpShowsCanonicalSubcommands(t *testing.T) {
+	root := RootCommand("1.2.3")
+	root.FlagSet.SetOutput(io.Discard)
+
+	stdout, stderr := captureOutput(t, func() {
+		if err := root.Parse([]string{"xcode", "version"}); err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		err := root.Run(context.Background())
+		if !errors.Is(err, flag.ErrHelp) {
+			t.Fatalf("expected ErrHelp, got %v", err)
+		}
+	})
+
+	if stdout != "" {
+		t.Fatalf("expected empty stdout, got %q", stdout)
+	}
+	for _, want := range []string{"view", "edit", "bump", "asc xcode version view", "asc xcode version edit"} {
+		if !strings.Contains(stderr, want) {
+			t.Fatalf("expected help to contain %q, got %q", want, stderr)
+		}
+	}
+	for _, hidden := range []string{"\n  get", "\n  set", "asc xcode version get", "asc xcode version set"} {
+		if strings.Contains(stderr, hidden) {
+			t.Fatalf("expected help to hide %q, got %q", hidden, stderr)
+		}
+	}
 }
 
 func TestXcodeArchiveRequiresWorkspaceOrProject(t *testing.T) {
