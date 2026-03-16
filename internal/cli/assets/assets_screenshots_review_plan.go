@@ -371,7 +371,7 @@ func executeScreenshotReviewPlan(ctx context.Context, opts screenshotReviewPlanO
 	result.PlannedGroups = len(groupKeys)
 
 	blockingIssues := result.ErrorCount > 0
-	if opts.Apply && blockingIssues {
+	if blockingIssues {
 		for _, key := range groupKeys {
 			result.Groups = append(result.Groups, screenshotReviewPlanGroup{
 				Locale:                key.locale,
