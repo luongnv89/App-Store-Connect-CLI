@@ -858,7 +858,15 @@ func readLastSessionBySelection(selection backendSelection) (persistedSession, b
 	case sessionBackendFile:
 		key, ok, err := readLastKeyFromFile()
 		if err == nil && ok {
-			return readSessionFromFile(key)
+			sess, ok, err := readSessionFromFile(key)
+			if err != nil || ok || !selection.fallbackKeychain {
+				return sess, ok, err
+			}
+			sess, ok, err = readSessionFromKeychain(key)
+			if err != nil {
+				return persistedSession{}, false, nil
+			}
+			return sess, ok, nil
 		}
 		if err != nil {
 			return persistedSession{}, false, err
