@@ -123,9 +123,10 @@ func (e *TwoFactorRequiredError) Error() string {
 }
 
 type TwoFactorChallenge struct {
-	Method      string
-	Destination string
-	Requested   bool
+	Method                 string
+	Destination            string
+	Requested              bool
+	PhoneFallbackAvailable bool
 }
 
 const (
@@ -1065,9 +1066,10 @@ func PrepareTwoFactorChallenge(ctx context.Context, session *AuthSession) (*TwoF
 	}
 	if session.twoFactorMethod != "" {
 		return &TwoFactorChallenge{
-			Method:      session.twoFactorMethod,
-			Destination: session.twoFactorDestination,
-			Requested:   session.twoFactorCodeRequested,
+			Method:                 session.twoFactorMethod,
+			Destination:            session.twoFactorDestination,
+			Requested:              session.twoFactorCodeRequested,
+			PhoneFallbackAvailable: session.twoFactorMethod == twoFactorMethodTrustedDevice && session.twoFactorPhoneID != 0,
 		}, nil
 	}
 
@@ -1076,39 +1078,49 @@ func PrepareTwoFactorChallenge(ctx context.Context, session *AuthSession) (*TwoF
 		return nil, err
 	}
 
-	if opts.NoTrustedDevices {
-		if len(opts.TrustedPhoneNumbers) == 0 {
-			return nil, fmt.Errorf("2fa failed: no trusted phone numbers available")
-		}
+	session.twoFactorPhoneID = 0
+	session.twoFactorPhoneMode = ""
+	session.twoFactorDestination = ""
+	if len(opts.TrustedPhoneNumbers) > 0 {
 		phone := opts.TrustedPhoneNumbers[0]
 		mode := strings.TrimSpace(phone.PushMode)
 		if mode == "" {
 			mode = "sms"
 		}
-
-		session.twoFactorMethod = twoFactorMethodPhone
 		session.twoFactorPhoneID = phone.ID
 		session.twoFactorPhoneMode = mode
 		session.twoFactorDestination = strings.TrimSpace(phone.NumberWithDialCode)
+	}
+
+	if opts.NoTrustedDevices {
+		if session.twoFactorPhoneID == 0 {
+			return nil, fmt.Errorf("2fa failed: no trusted phone numbers available")
+		}
+
+		session.twoFactorMethod = twoFactorMethodPhone
 		session.twoFactorCodeRequested = false
 
 		if len(opts.TrustedPhoneNumbers) > 1 {
-			if err := requestPhoneCode(ctx, session, phone.ID, mode); err != nil {
+			if err := requestPhoneCode(ctx, session, session.twoFactorPhoneID, session.twoFactorPhoneMode); err != nil {
 				return nil, err
 			}
 			session.twoFactorCodeRequested = true
 		}
 
 		return &TwoFactorChallenge{
-			Method:      session.twoFactorMethod,
-			Destination: session.twoFactorDestination,
-			Requested:   session.twoFactorCodeRequested,
+			Method:                 session.twoFactorMethod,
+			Destination:            session.twoFactorDestination,
+			Requested:              session.twoFactorCodeRequested,
+			PhoneFallbackAvailable: false,
 		}, nil
 	}
 
 	session.twoFactorMethod = twoFactorMethodTrustedDevice
 	session.twoFactorCodeRequested = false
-	return &TwoFactorChallenge{Method: session.twoFactorMethod}, nil
+	return &TwoFactorChallenge{
+		Method:                 session.twoFactorMethod,
+		PhoneFallbackAvailable: session.twoFactorPhoneID != 0,
+	}, nil
 }
 
 func submitTrustedDeviceCode(ctx context.Context, session *AuthSession, code string) error {
@@ -1258,7 +1270,12 @@ func SubmitTwoFactorCode(ctx context.Context, session *AuthSession, code string)
 		return finalizeTwoFactor(ctx, session)
 	case twoFactorMethodTrustedDevice:
 		if err := submitTrustedDeviceCode(ctx, session, code); err != nil {
-			return err
+			if session.twoFactorPhoneID == 0 {
+				return err
+			}
+			if phoneErr := submitPhoneCode(ctx, session, code, session.twoFactorPhoneID, session.twoFactorPhoneMode); phoneErr != nil {
+				return phoneErr
+			}
 		}
 		return finalizeTwoFactor(ctx, session)
 	default:

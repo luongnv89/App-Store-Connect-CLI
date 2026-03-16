@@ -363,7 +363,9 @@ Examples:
 									twoFactorHelp = "Enter the verification code sent to your trusted phone"
 								}
 							case "trusted-device":
-								twoFactorHelp = "Enter the verification code from your trusted device"
+								if !challenge.PhoneFallbackAvailable {
+									twoFactorHelp = "Enter the verification code from your trusted device"
+								}
 							}
 						}
 
