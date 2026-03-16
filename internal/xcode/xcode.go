@@ -66,6 +66,7 @@ type bundleInfo struct {
 	BundleID    string
 	Version     string
 	BuildNumber string
+	Platform    string
 }
 
 func Archive(ctx context.Context, opts ArchiveOptions) (*ArchiveResult, error) {
@@ -180,6 +181,25 @@ func Export(ctx context.Context, opts ExportOptions) (*ExportResult, error) {
 		Version:     info.Version,
 		BuildNumber: info.BuildNumber,
 	}, nil
+}
+
+// IsDirectUploadMode reports whether ExportOptions.plist uploads directly to
+// App Store Connect instead of producing a local IPA artifact.
+func IsDirectUploadMode(exportOptionsPlistPath string) bool {
+	return isDirectUploadMode(exportOptionsPlistPath)
+}
+
+// InferArchivePlatform returns the App Store platform for the archived app by
+// reading the embedded app Info.plist inside the .xcarchive.
+func InferArchivePlatform(archivePath string) (string, error) {
+	info, err := readArchiveBundleInfo(archivePath)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(info.Platform) == "" {
+		return "", fmt.Errorf("could not infer App Store platform from archive")
+	}
+	return info.Platform, nil
 }
 
 func validateArchiveOptions(opts ArchiveOptions) error {
@@ -613,11 +633,15 @@ func readArchiveBundleInfo(archivePath string) (bundleInfo, error) {
 		return bundleInfo{}, fmt.Errorf("decode archive Info.plist: %w", err)
 	}
 	appProps, _ := payload["ApplicationProperties"].(map[string]any)
-	return bundleInfo{
+	info := bundleInfo{
 		BundleID:    coercePlistValueToString(appProps["CFBundleIdentifier"]),
 		Version:     coercePlistValueToString(appProps["CFBundleShortVersionString"]),
 		BuildNumber: coercePlistValueToString(appProps["CFBundleVersion"]),
-	}, nil
+	}
+	if platform, err := inferArchivePlatformFromAppBundle(archivePath, appProps); err == nil {
+		info.Platform = platform
+	}
+	return info, nil
 }
 
 func readIPABundleInfo(ipaPath string) (bundleInfo, error) {
@@ -670,7 +694,92 @@ func readBundleInfoFromZip(file *zip.File) (bundleInfo, error) {
 		BundleID:    coercePlistValueToString(payload["CFBundleIdentifier"]),
 		Version:     coercePlistValueToString(payload["CFBundleShortVersionString"]),
 		BuildNumber: coercePlistValueToString(payload["CFBundleVersion"]),
+		Platform:    inferAppStorePlatformFromPlist(payload),
 	}, nil
+}
+
+func inferArchivePlatformFromAppBundle(archivePath string, appProps map[string]any) (string, error) {
+	applicationPath := coercePlistValueToString(appProps["ApplicationPath"])
+	if strings.TrimSpace(applicationPath) == "" {
+		return "", fmt.Errorf("archive Info.plist missing ApplicationPath")
+	}
+
+	appBundlePath := filepath.Join(archivePath, "Products", filepath.FromSlash(applicationPath))
+	candidatePaths := []string{filepath.Join(appBundlePath, "Info.plist")}
+	if strings.HasSuffix(strings.ToLower(strings.TrimSpace(appBundlePath)), ".app") {
+		candidatePaths = append(candidatePaths, filepath.Join(appBundlePath, "Contents", "Info.plist"))
+	}
+
+	var (
+		data    []byte
+		lastErr error
+	)
+	for _, candidatePath := range candidatePaths {
+		data, lastErr = os.ReadFile(candidatePath)
+		if lastErr == nil {
+			break
+		}
+	}
+	if lastErr != nil {
+		return "", fmt.Errorf("read archived app Info.plist: %w", lastErr)
+	}
+	var payload map[string]any
+	if _, err := plist.Unmarshal(data, &payload); err != nil {
+		return "", fmt.Errorf("decode archived app Info.plist: %w", err)
+	}
+	platform := inferAppStorePlatformFromPlist(payload)
+	if platform == "" {
+		return "", fmt.Errorf("archived app Info.plist did not contain a supported platform marker")
+	}
+	return platform, nil
+}
+
+func inferAppStorePlatformFromPlist(payload map[string]any) string {
+	if payload == nil {
+		return ""
+	}
+	if platform := mapXcodePlatformToAppStorePlatform(coercePlistValueToString(payload["DTPlatformName"])); platform != "" {
+		return platform
+	}
+	if platform := mapXcodePlatformToAppStorePlatform(firstPlistString(payload["CFBundleSupportedPlatforms"])); platform != "" {
+		return platform
+	}
+	return ""
+}
+
+func firstPlistString(value any) string {
+	switch v := value.(type) {
+	case []any:
+		for _, item := range v {
+			if text := coercePlistValueToString(item); text != "" {
+				return text
+			}
+		}
+	case []string:
+		for _, item := range v {
+			if text := strings.TrimSpace(item); text != "" {
+				return text
+			}
+		}
+	}
+	return ""
+}
+
+func mapXcodePlatformToAppStorePlatform(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "iphoneos", "iphonesimulator":
+		return "IOS"
+	case "watchos", "watchsimulator":
+		return "IOS"
+	case "appletvos", "appletvsimulator":
+		return "TV_OS"
+	case "xros", "xrsimulator":
+		return "VISION_OS"
+	case "macosx":
+		return "MAC_OS"
+	default:
+		return ""
+	}
 }
 
 func coercePlistValueToString(value any) string {

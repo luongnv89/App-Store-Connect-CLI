@@ -564,6 +564,96 @@ func TestExportDoesNotWarnForBetaXcodeDevelopmentExport(t *testing.T) {
 	}
 }
 
+func TestInferArchivePlatformReadsEmbeddedAppInfo(t *testing.T) {
+	tempDir := t.TempDir()
+	archivePath := filepath.Join(tempDir, "Demo.xcarchive")
+	if err := writeArchiveInfoPlist(archivePath); err != nil {
+		t.Fatalf("writeArchiveInfoPlist() error: %v", err)
+	}
+	appInfoPath := filepath.Join(archivePath, "Products", "Applications", "Demo.app", "Info.plist")
+	if err := os.MkdirAll(filepath.Dir(appInfoPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error: %v", err)
+	}
+	data, err := plist.Marshal(map[string]any{
+		"CFBundleIdentifier": "com.example.demo",
+		"DTPlatformName":     "appletvos",
+	}, plist.XMLFormat)
+	if err != nil {
+		t.Fatalf("plist.Marshal() error: %v", err)
+	}
+	if err := os.WriteFile(appInfoPath, data, 0o644); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	platform, err := InferArchivePlatform(archivePath)
+	if err != nil {
+		t.Fatalf("InferArchivePlatform() error: %v", err)
+	}
+	if platform != "TV_OS" {
+		t.Fatalf("expected TV_OS, got %q", platform)
+	}
+}
+
+func TestInferArchivePlatformReadsEmbeddedMacAppInfo(t *testing.T) {
+	tempDir := t.TempDir()
+	archivePath := filepath.Join(tempDir, "Demo.xcarchive")
+	if err := writeArchiveInfoPlist(archivePath); err != nil {
+		t.Fatalf("writeArchiveInfoPlist() error: %v", err)
+	}
+	appInfoPath := filepath.Join(archivePath, "Products", "Applications", "Demo.app", "Contents", "Info.plist")
+	if err := os.MkdirAll(filepath.Dir(appInfoPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error: %v", err)
+	}
+	data, err := plist.Marshal(map[string]any{
+		"CFBundleIdentifier": "com.example.demo",
+		"DTPlatformName":     "macosx",
+	}, plist.XMLFormat)
+	if err != nil {
+		t.Fatalf("plist.Marshal() error: %v", err)
+	}
+	if err := os.WriteFile(appInfoPath, data, 0o644); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	platform, err := InferArchivePlatform(archivePath)
+	if err != nil {
+		t.Fatalf("InferArchivePlatform() error: %v", err)
+	}
+	if platform != "MAC_OS" {
+		t.Fatalf("expected MAC_OS, got %q", platform)
+	}
+}
+
+func TestInferArchivePlatformReadsEmbeddedWatchAppInfo(t *testing.T) {
+	tempDir := t.TempDir()
+	archivePath := filepath.Join(tempDir, "Demo.xcarchive")
+	if err := writeArchiveInfoPlist(archivePath); err != nil {
+		t.Fatalf("writeArchiveInfoPlist() error: %v", err)
+	}
+	appInfoPath := filepath.Join(archivePath, "Products", "Applications", "Demo.app", "Info.plist")
+	if err := os.MkdirAll(filepath.Dir(appInfoPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error: %v", err)
+	}
+	data, err := plist.Marshal(map[string]any{
+		"CFBundleIdentifier": "com.example.demo",
+		"DTPlatformName":     "watchos",
+	}, plist.XMLFormat)
+	if err != nil {
+		t.Fatalf("plist.Marshal() error: %v", err)
+	}
+	if err := os.WriteFile(appInfoPath, data, 0o644); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	platform, err := InferArchivePlatform(archivePath)
+	if err != nil {
+		t.Fatalf("InferArchivePlatform() error: %v", err)
+	}
+	if platform != "IOS" {
+		t.Fatalf("expected IOS for standalone watchOS app, got %q", platform)
+	}
+}
+
 func TestExportRejectsExistingIPAWithoutOverwrite(t *testing.T) {
 	tempDir := t.TempDir()
 	archivePath := filepath.Join(tempDir, "Demo.xcarchive")
