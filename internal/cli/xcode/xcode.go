@@ -74,12 +74,16 @@ be passed directly into asc upload and publish commands.
 
 Examples:
   asc xcode archive --workspace App.xcworkspace --scheme App --archive-path .asc/artifacts/App.xcarchive --output json
-  asc xcode export --archive-path .asc/artifacts/App.xcarchive --export-options ExportOptions.plist --ipa-path .asc/artifacts/App.ipa --output json`,
+  asc xcode export --archive-path .asc/artifacts/App.xcarchive --export-options ExportOptions.plist --ipa-path .asc/artifacts/App.ipa --output json
+  asc xcode version view
+  asc xcode version bump --type patch
+  asc xcode version edit --version "1.3.0" --build-number "42"`,
 		FlagSet:   fs,
 		UsageFunc: shared.DefaultUsageFunc,
 		Subcommands: []*ffcli.Command{
 			XcodeArchiveCommand(),
 			XcodeExportCommand(),
+			XcodeVersionCommand(),
 		},
 		Exec: func(ctx context.Context, args []string) error {
 			return flag.ErrHelp
@@ -177,7 +181,7 @@ func XcodeExportCommand() *ffcli.Command {
 
 	archivePath := fs.String("archive-path", "", "Path to the .xcarchive input (required)")
 	exportOptions := fs.String("export-options", "", "Path to ExportOptions.plist (required)")
-	ipaPath := fs.String("ipa-path", "", "Destination path for the exported .ipa file (required)")
+	ipaPath := fs.String("ipa-path", "", "Destination path for a local .ipa when one is produced (required)")
 	overwrite := fs.Bool("overwrite", false, "Replace an existing IPA at --ipa-path")
 	wait := fs.Bool("wait", false, "Wait for App Store Connect build discovery and processing when export uploads directly")
 	pollInterval := fs.Duration("poll-interval", shared.PublishDefaultPollInterval, "Polling interval for --wait when waiting for uploaded builds")
@@ -188,20 +192,19 @@ func XcodeExportCommand() *ffcli.Command {
 	return &ffcli.Command{
 		Name:       "export",
 		ShortUsage: "asc xcode export [flags]",
-		ShortHelp:  "Export an IPA or direct upload build.",
-		LongHelp: `Export an IPA to an exact path or upload directly.
+		ShortHelp:  "Export an archive to a deterministic IPA path or direct upload.",
+		LongHelp: `Export an archive to a deterministic IPA path or direct upload.
 
-This command runs xcodebuild -exportArchive into a temporary directory and then
-moves the produced IPA to --ipa-path so workflows and humans can rely on one
-deterministic artifact path.
-
+This command runs xcodebuild -exportArchive into a temporary directory.
+When ExportOptions.plist produces a local IPA, asc moves it to --ipa-path.
 When ExportOptions.plist uses destination=upload, xcodebuild uploads directly
-to App Store Connect instead of writing a local IPA. Use --wait to poll until
-the uploaded build appears and finishes processing.
+to App Store Connect and asc returns archive metadata without writing a local
+IPA at --ipa-path. Use --wait to poll until the uploaded build appears and
+finishes processing.
 
 Examples:
   asc xcode export --archive-path .asc/artifacts/App.xcarchive --export-options ExportOptions.plist --ipa-path .asc/artifacts/App.ipa
-  asc xcode export --archive-path .asc/artifacts/App.xcarchive --export-options ExportOptions.plist --ipa-path .asc/artifacts/App.ipa --wait
+  asc xcode export --archive-path .asc/artifacts/App.xcarchive --export-options UploadExportOptions.plist --ipa-path .asc/artifacts/App.ipa --wait
   asc xcode export --archive-path .asc/artifacts/App.xcarchive --export-options ExportOptions.plist --ipa-path .asc/artifacts/App.ipa --xcodebuild-flag=-allowProvisioningUpdates --output json`,
 		FlagSet:   fs,
 		UsageFunc: shared.DefaultUsageFunc,
