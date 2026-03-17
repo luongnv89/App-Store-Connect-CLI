@@ -982,8 +982,6 @@ Examples:
 			SubscriptionsAvailabilityViewCommand(),
 			SubscriptionsAvailabilityAvailableTerritoriesCommand(),
 			SubscriptionsAvailabilityEditCommand(),
-			DeprecatedSubscriptionsAvailabilityGetAliasCommand(),
-			DeprecatedSubscriptionsAvailabilitySetAliasCommand(),
 		},
 		Exec: func(ctx context.Context, args []string) error {
 			return flag.ErrHelp
@@ -1143,6 +1141,10 @@ Examples:
 		FlagSet:   fs,
 		UsageFunc: shared.DefaultUsageFunc,
 		Exec: func(ctx context.Context, args []string) error {
+			if err := shared.RecoverBoolFlagTailArgs(fs, args, availableInNew); err != nil {
+				return err
+			}
+
 			id := strings.TrimSpace(*subID)
 			if id == "" {
 				fmt.Fprintln(os.Stderr, "Error: --subscription-id is required")
@@ -1175,24 +1177,4 @@ Examples:
 			return shared.PrintOutput(resp, *output.Output, *output.Pretty)
 		},
 	}
-}
-
-func DeprecatedSubscriptionsAvailabilityGetAliasCommand() *ffcli.Command {
-	return shared.DeprecatedAliasLeafCommand(
-		SubscriptionsAvailabilityViewCommand(),
-		"get",
-		"asc subscriptions availability get [flags]",
-		"asc subscriptions pricing availability view",
-		"Warning: `asc subscriptions pricing availability get` is deprecated. Use `asc subscriptions pricing availability view`.",
-	)
-}
-
-func DeprecatedSubscriptionsAvailabilitySetAliasCommand() *ffcli.Command {
-	return shared.DeprecatedAliasLeafCommand(
-		SubscriptionsAvailabilityEditCommand(),
-		"set",
-		"asc subscriptions availability set [flags]",
-		"asc subscriptions pricing availability edit",
-		"Warning: `asc subscriptions pricing availability set` is deprecated. Use `asc subscriptions pricing availability edit`.",
-	)
 }
