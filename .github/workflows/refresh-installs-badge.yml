@@ -52,6 +52,7 @@ jobs:
                 ok=1
                 break
               fi
+              git rebase --abort >/dev/null 2>&1 || true
               echo "push attempt ${attempt} failed, retrying in 15s..."
               sleep 15
             done
